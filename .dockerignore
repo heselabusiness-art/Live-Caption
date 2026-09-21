@@ -1,0 +1,12 @@
+.git
+.gitignore
+.vs
+.idea
+bin/
+obj/
+**/*.user
+**/*.suo
+WebView2Data/
+**/*.WebView2/
+chrome-extension/native-host/obj/
+chrome-extension/native-host/bin/

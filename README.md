@@ -39,6 +39,23 @@ dotnet run
 
 Or open `LiveCaptionViewer.csproj` in Visual Studio 2022 (17.8+) and press F5.
 
+## Docker (Windows containers)
+
+This is a WPF app and must be built with **Windows containers** (not Linux).
+
+```powershell
+# Docker Desktop -> Switch to Windows containers
+docker build -t live-caption-viewer .
+```
+
+Or:
+
+```powershell
+docker compose --profile build build
+```
+
+The image packages a self-contained `win-x64` publish. Run the app on a Windows desktop for normal GUI use; containers cannot display the WPF/WebView2 UI interactively.
+
 ## Using the app
 
 1. Press `Win + Ctrl + L` to open Windows Live Captions and let it start

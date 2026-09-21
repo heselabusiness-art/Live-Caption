@@ -1,0 +1,10 @@
+services:
+  live-caption-viewer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: live-caption-viewer:latest
+    # GUI apps require Windows containers plus an interactive desktop session.
+    # Use this compose file mainly to build/package the app artifact.
+    profiles:
+      - build
