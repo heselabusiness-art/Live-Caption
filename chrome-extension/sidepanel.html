@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Live Caption Assistant</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header>
+    <h1>Live Caption Viewer</h1>
+    <p>Sidebar · Windows Live Captions · ChatGPT / Claude</p>
+  </header>
+
+  <div class="toolbar">
+    <button id="btnChatGpt" class="ghost" type="button">ChatGPT</button>
+    <button id="btnClaude" class="ghost" type="button">Claude</button>
+    <button id="btnStart" type="button">Start</button>
+    <button id="btnStop" type="button" disabled>Stop</button>
+    <button id="btnClear" class="ghost" type="button">Clear</button>
+  </div>
+
+  <div class="status-row">
+    <span id="statusDot" class="dot"></span>
+    <span id="statusLabel">Idle</span>
+  </div>
+  <div class="live-bar" id="liveBar"><span class="base">(waiting for caption…)</span></div>
+
+  <div class="rounds" id="roundPanel"></div>
+
+  <div class="tabs">
+    <button type="button" data-panel="segment" class="active">Behavioral &amp; Intro</button>
+    <button type="button" data-panel="tech">Tech Interview</button>
+    <button type="button" data-panel="pre">Pre-interview</button>
+    <button type="button" data-panel="onboarding">Onboarding</button>
+  </div>
+
+  <main>
+    <section id="panel-segment" class="panel active">
+      <div class="section-head">
+        <span id="segDot" class="dot"></span>
+        SEGMENT
+        <span id="segmentHint"> — Idle. Alt+1 send · Alt+3 capture only · Alt+4 reminder.</span>
+      </div>
+      <div id="segmentBox" class="mono"></div>
+      <div class="row">
+        <button type="button" id="btnHome">Home · send question</button>
+        <button type="button" id="btnEnd">End · pushback</button>
+        <button type="button" class="ghost" id="btnPageUp">PageUp · capture</button>
+        <button type="button" class="ghost" id="btnPageDown">PageDown · reminder</button>
+      </div>
+    </section>
+
+    <section id="panel-tech" class="panel">
+      <div class="section-head">
+        <span id="tiDot" class="dot"></span>
+        SEGMENT
+        <span id="tiHint"> — Capture tab / send coding from the buttons, or assign keys in chrome://extensions/shortcuts</span>
+      </div>
+      <div id="tiSegmentBox" class="mono"></div>
+      <div class="card">
+        <div class="row" style="padding:0 0 8px">
+          <button type="button" class="ghost" id="btnRefreshTabs">Refresh</button>
+          <button type="button" id="btnCaptureTab">Capture</button>
+          <button type="button" class="ghost" id="btnTechSend">Delete · coding send</button>
+        </div>
+        <select id="tabPicker"></select>
+        <p id="techStatus">Click Refresh to list tabs. Select one, then Capture.</p>
+      </div>
+      <img id="screenshot" alt="" hidden />
+    </section>
+
+    <section id="panel-pre" class="panel">
+      <div class="card">
+        <h3>Context Loaded</h3>
+        <div class="grid2">
+          <div><label>SENIORITY</label><input id="pi-seniority" type="text" value="Staff" /></div>
+          <div><label>DOMAIN</label><input id="pi-domain" type="text" value="AI/ML" /></div>
+          <div><label>Company</label><input id="pi-company" type="text" placeholder="name" /></div>
+          <div><label>COMPANY STAGE</label><input id="pi-companyStage" type="text" placeholder="Startup / Growth / Enterprise / Big Tech / AI-first" /></div>
+        </div>
+        <label>My Differentiation</label>
+        <textarea id="pi-myDifferentiation" rows="3" placeholder="What makes me specifically better than that typical profile"></textarea>
+        <label>My Through-Line</label>
+        <textarea id="pi-myThroughLine" rows="2" placeholder="The ONE impression every interviewer should describe in debrief"></textarea>
+      </div>
+      <div class="card">
+        <h3>Detected Analysis</h3>
+        <label>Key Skills Detected</label>
+        <textarea id="pi-keySkills" rows="2" placeholder="top 5 from resume"></textarea>
+        <label>Key Projects Detected</label>
+        <textarea id="pi-keyProjects" rows="2" placeholder="project names"></textarea>
+        <label>JD Focus Areas Detected</label>
+        <textarea id="pi-jdFocus" rows="2" placeholder="top 3 requirements"></textarea>
+      </div>
+      <div class="card">
+        <h3>Basis &amp; Status</h3>
+        <div class="grid2">
+          <div><label>USED FOR</label><input id="pi-usedFor" type="text" placeholder="company name" /></div>
+          <div><label>OUTCOME</label><input id="pi-outcome" type="text" value="pending" /></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Company Context</h3>
+        <div class="grid2">
+          <div><label>Product</label><input id="pi-product" type="text" placeholder="what they build in 1 sentence" /></div>
+          <div><label>Team Focus</label><input id="pi-teamFocus" type="text" placeholder="what this specific team works on" /></div>
+        </div>
+        <label>Known Tech Stack</label>
+        <textarea id="pi-knownTechStack" rows="2" placeholder="from JD or research"></textarea>
+        <label>Company Values</label>
+        <textarea id="pi-companyValues" rows="2" placeholder="from careers page or Glassdoor"></textarea>
+        <label>Interviewer Background</label>
+        <input id="pi-interviewerBackground" type="text" placeholder="from LinkedIn if known" />
+        <label>Recent News</label>
+        <textarea id="pi-recentNews" rows="2" placeholder="funding, product launch, or strategic shift"></textarea>
+        <label>Typical Candidate Profile</label>
+        <textarea id="pi-typicalCandidate" rows="3" placeholder="What a typical Staff AI/ML candidate looks like for this role"></textarea>
+      </div>
+      <div class="card">
+        <h3>My Profiles Info</h3>
+        <label>RESUME SUMMARY</label>
+        <textarea id="pi-resumeSummary" rows="5" placeholder="Paste your resume bullets here"></textarea>
+        <label>JOB DESCRIPTION</label>
+        <textarea id="pi-jobDescription" rows="5" placeholder="Paste key JD requirements here"></textarea>
+        <label>PROJECT STORIES</label>
+        <textarea id="pi-projectStories" rows="5" placeholder="Paste 2–3 project stories here"></textarea>
+        <label>SYSTEM DESIGN SCENARIOS</label>
+        <textarea id="pi-systemDesignScenarios" rows="5" placeholder="Paste 1–3 system design scenarios here"></textarea>
+      </div>
+      <div class="row">
+        <button type="button" id="promptModeToggle" class="toggle">Full</button>
+        <button type="button" id="btnPiSend">Send</button>
+      </div>
+    </section>
+
+    <section id="panel-onboarding" class="panel">
+      <div class="card">
+        <h3>My Materials</h3>
+        <label>Company / Title / Level / Team</label>
+        <input id="ob-companyRoleTeam" type="text" placeholder="e.g. Acme Corp / Staff ML Engineer / L6 / Platform team" />
+        <div class="grid2">
+          <div><label>Manager</label><input id="ob-manager" type="text" placeholder="name, background, style" /></div>
+          <div><label>Week #</label><input id="ob-weekNumber" type="text" value="1" /></div>
+        </div>
+        <label>Their Stack</label>
+        <input id="ob-stack" type="text" placeholder="languages, cloud, ML infra, orchestration, data" />
+        <label>What They Hired Me To Do</label>
+        <textarea id="ob-hiredToDo" rows="2" placeholder="one sentence"></textarea>
+      </div>
+      <div class="card">
+        <h3>Locked From My Interview Loop</h3>
+        <label>Anchor Project and Metrics</label>
+        <textarea id="ob-anchorProject" rows="2" placeholder="exact numbers, what each measured"></textarea>
+        <label>Scale Facts</label>
+        <textarea id="ob-scaleFacts" rows="2" placeholder="team size, volume, model count"></textarea>
+        <label>Gaps I Openly Named In The Loop</label>
+        <textarea id="ob-gaps" rows="2" placeholder="the honest nots"></textarea>
+        <label>Why I Left (exactly as said in the loop)</label>
+        <textarea id="ob-whyLeft" rows="2" placeholder="one forward-looking sentence, never negative"></textarea>
+        <label>My 40-Second Self Intro (scripted)</label>
+        <textarea id="ob-selfIntro" rows="3" placeholder="origin at high level, what I'm here to work on, one human detail"></textarea>
+      </div>
+      <div class="card">
+        <h3>My Working Process</h3>
+        <label>How I Scope / Design / Who I Pull In</label>
+        <textarea id="ob-processScoping" rows="2"></textarea>
+        <label>Build vs Buy vs Wait Criteria</label>
+        <textarea id="ob-processBuildBuy" rows="2"></textarea>
+        <label>How I Test / Validate Non-Deterministic Behavior</label>
+        <textarea id="ob-processTesting" rows="2"></textarea>
+        <label>How I Ship (branching, review, staging, rollout, flags, rollback)</label>
+        <textarea id="ob-processShipping" rows="2"></textarea>
+        <label>How I Handle An Incident / Quality Gates</label>
+        <textarea id="ob-processIncident" rows="2"></textarea>
+        <label>How I Report Progress / Risk / Disagree Upward</label>
+        <textarea id="ob-processReporting" rows="2"></textarea>
+      </div>
+      <div class="card">
+        <h3>My Carryover</h3>
+        <label>People (name, role, what they own, how to approach)</label>
+        <textarea id="ob-carryoverPeople" rows="2"></textarea>
+        <label>Their Acronyms and Internal Terms</label>
+        <textarea id="ob-carryoverAcronyms" rows="2"></textarea>
+        <label>Systems I Now Genuinely Understand</label>
+        <textarea id="ob-carryoverSystems" rows="2"></textarea>
+        <label>Open Commitments I Have Made</label>
+        <textarea id="ob-carryoverCommitments" rows="2"></textarea>
+        <label>Work Log Entries (paste last GENERATE: carryover output)</label>
+        <textarea id="ob-carryoverWorkLog" rows="3"></textarea>
+      </div>
+      <div class="row">
+        <button type="button" id="btnObLoad">Load Onboarding Prompt</button>
+      </div>
+      <div class="card">
+        <h3>Live Meeting Controls</h3>
+        <div class="grid3">
+          <div>
+            <label>Meeting Type</label>
+            <select id="ob-meetingType">
+              <option>MANAGER 1:1</option>
+              <option>STANDUP</option>
+              <option>SPRINT REVIEW OR DEMO</option>
+              <option>PR OR CODE REVIEW</option>
+              <option>ARCHITECTURE OR CODEBASE WALKTHROUGH</option>
+              <option>PROCESS AND TOOLING</option>
+              <option>TEAM INTRO</option>
+              <option>PEER 1:1 OR COFFEE</option>
+              <option>SKIP LEVEL OR EXEC</option>
+              <option>CROSS FUNCTIONAL</option>
+              <option>FIRST DESIGN DISCUSSION</option>
+              <option>TASK SCOPING</option>
+              <option>RETRO OR POSTMORTEM</option>
+            </select>
+          </div>
+          <div><label>Who</label><input id="ob-meetingWho" type="text" placeholder="e.g. my manager" /></div>
+          <div><label>Length</label><input id="ob-meetingLength" type="text" placeholder="e.g. 30 min" /></div>
+        </div>
+        <button type="button" id="btnObSetup">Send SETUP</button>
+        <label style="margin-top:10px">Work Log Entry (ticket, PR, or notes)</label>
+        <textarea id="ob-workLogEntry" rows="3" placeholder="Paste ticket/PR/commit notes here"></textarea>
+        <button type="button" id="btnObLog">Send LOG:</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div id="sendStatus"></div>
+    <p class="hint">Shortcuts: Alt+1 Home · Alt+2 End · Alt+3 PageUp · Alt+4 PageDown. Assign Insert/Delete in chrome://extensions/shortcuts</p>
+  </footer>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

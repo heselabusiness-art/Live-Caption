@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>LiveCaptionNativeHost</RootNamespace>
+    <AssemblyName>LiveCaptionNativeHost</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <DefaultItemExcludes>$(DefaultItemExcludes);_keygen\**;publish\**</DefaultItemExcludes>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\Services\LiveCaptionsCaptureService.cs" Link="LiveCaptionsCaptureService.cs" />
+    <Compile Include="..\..\Models\CapturedCaption.cs" Link="CapturedCaption.cs" />
+  </ItemGroup>
+</Project>

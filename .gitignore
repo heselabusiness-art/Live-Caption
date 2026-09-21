@@ -1,0 +1,9 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.idea/
+*.swp
+WebView2Data/
+*.WebView2/
