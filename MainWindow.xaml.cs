@@ -1383,10 +1383,23 @@ public partial class MainWindow : Window
 
         // Replace a pattern only when the UI field has a non-empty value.
         // Using a MatchEvaluator lambda avoids issues with '$' in replacement text.
-        static string Sub(string text, string pattern, string value,
-                          RegexOptions opts = RegexOptions.None)
+        // Placeholders are matched case-insensitively so harmless wording-case edits in
+        // Prompt.txt ("Propose" vs "propose") don't silently stop a field from being filled.
+        // A field that HAS a value but whose placeholder can't be found is recorded and
+        // reported after sending, so prompt drift is visible instead of silent.
+        var unmatched = new List<string>();
+
+        string Sub(string text, string pattern, string value,
+                   RegexOptions opts = RegexOptions.None)
         {
             if (string.IsNullOrWhiteSpace(value)) return text;
+            opts |= RegexOptions.IgnoreCase;
+            if (!Regex.IsMatch(text, pattern, opts))
+            {
+                string label = Regex.Unescape(pattern.Split(':')[0]).Trim(' ', '-');
+                unmatched.Add(label.Length > 40 ? label[..40] + "…" : label);
+                return text;
+            }
             string v = value.Trim();
             return Regex.Replace(text, pattern, _ => v, opts);
         }
@@ -1463,6 +1476,14 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(prompt)) return;
         await SendPromptToAiAsync(prompt);
+
+        if (unmatched.Count > 0)
+        {
+            SetSendStatus(
+                $"{GptSendStatusLabel.Text}  ⚠ Not placed (Prompt.txt wording changed): " +
+                string.Join(", ", unmatched.Distinct()),
+                isError: true);
+        }
     }
 
     // ── Custom title-bar handlers ─────────────────────────────────────────────
