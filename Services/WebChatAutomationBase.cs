@@ -779,62 +779,301 @@ public abstract class WebChatAutomationBase
         if (!IsOnTargetSite())
             return $"Not on {ServiceName}. Navigate there first.";
 
+        // While a reply streams, ChatGPT/Claude replace Send with Stop, so a hotkey pressed
+        // right after the previous question would find no Send button. Wait it out.
+        if (!await WaitWhileGeneratingAsync(TimeSpan.FromSeconds(45)))
+            return $"[{ServiceName}] The previous answer is still generating — press again when it finishes.";
+
+        // While a reply streams, ChatGPT/Claude replace Send with Stop, so a hotkey pressed
+        // right after the previous question would find no Send button. Wait it out.
+        if (!await WaitWhileGeneratingAsync(TimeSpan.FromSeconds(45)))
+            return $"[{ServiceName}] The previous answer is still generating — press again when it finishes.";
+
         string injectResult = await InjectTextAsync(text);
+        if (injectResult == "INSERT_FAILED")
+            return $"[{ServiceName}] Could not put the text into the chat box ({SizeNote(text)}; {await DescribeSendBlockerAsync()}).";
         if (injectResult != "OK")
             return $"[{ServiceName}] Input field not found ({injectResult}).";
 
         await Task.Delay(SendDelay);
 
-        string clickResult = await ClickSendAsync();
+        string clickResult = await ClickSendWhenReadyAsync();
         return clickResult switch
         {
             "SENT"          => $"[{ServiceName}] Sent.",
-            "BTN_DISABLED"  => $"[{ServiceName}] Send button disabled.",
-            "BTN_NOT_FOUND" => $"[{ServiceName}] Send button not found.",
+            "BTN_DISABLED"  => $"[{ServiceName}] Send button stayed disabled for {SendReadyMaxWaitMs / 1000}s ({SizeNote(text)}; {await DescribeSendBlockerAsync()}).",
+            "BTN_NOT_FOUND" => $"[{ServiceName}] Send button not found ({SizeNote(text)}; {await DescribeSendBlockerAsync()}).",
+            "NOT_SUBMITTED" => $"[{ServiceName}] Send was clicked but the message was not submitted ({await DescribeSendBlockerAsync()}).",
             _               => $"[{ServiceName}] Unexpected: {clickResult}"
         };
     }
 
+    /// <summary>
+    /// "prompt 124,724 chars ≈ 31,181 tokens" — shown on failures because chat sites cap the
+    /// size of a single message (≈32k tokens on some plans) and disable Send beyond it.
+    /// </summary>
+    private static string SizeNote(string text) =>
+        $"prompt {text.Length:N0} chars ≈ {text.Length / 4:N0} tokens";
+
+    /// <summary>Returns true once no reply is streaming; false if it is still generating after <paramref name="max"/>.</summary>
+    private async Task<bool> WaitWhileGeneratingAsync(TimeSpan max)
+    {
+        var sw = Stopwatch.StartNew();
+        while (await IsGeneratingAsync())
+        {
+            if (sw.Elapsed >= max) return false;
+            await Task.Delay(500);
+        }
+        return true;
+    }
+
     // ─── JS helpers ───────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Puts <paramref name="text"/> into the chat composer and VERIFIES that it landed.
+    ///
+    /// Why this is not just <c>execCommand('insertText')</c>:
+    /// that call only works reliably while the page has focus. With a global hotkey the
+    /// foreground app is something else (the interview window), and after a click on the
+    /// Send button the focus sits on a WPF control. The composer then silently stays empty
+    /// and the Send button never enables. So we
+    ///   1. make the page behave as focused (CDP focus emulation),
+    ///   2. select the composer contents and insert through the browser's real editing
+    ///      pipeline (CDP <c>Input.insertText</c>), which also fires the input events the
+    ///      page's framework listens for,
+    ///   3. check the composer really holds the text, falling back to execCommand.
+    /// </summary>
+    /// <summary>
+    /// Puts <paramref name="text"/> into the chat composer and VERIFIES that it landed.
+    ///
+    /// Why this is not just <c>execCommand('insertText')</c>:
+    /// that call only works reliably while the page has focus. With a global hotkey the
+    /// foreground app is something else (the interview window), and after a click on the
+    /// Send button the focus sits on a WPF control. The composer then silently stays empty
+    /// and the Send button never enables. So we
+    ///   1. make the page behave as focused (CDP focus emulation),
+    ///   2. select the composer contents and insert through the browser's real editing
+    ///      pipeline (CDP <c>Input.insertText</c>), which also fires the input events the
+    ///      page's framework listens for,
+    ///   3. check the composer really holds the text, falling back to execCommand.
+    /// </summary>
     private async Task<string> InjectTextAsync(string text)
     {
-        string jsText = JsString(text);
-        string script = $@"
+        await EnsureFocusEmulationAsync();
+
+        string kind = await RunJsAsync(PrepareComposerScript()) ?? "JS_RETURNED_NULL";
+        if (kind != "CE" && kind != "TA")
+            return kind;                                   // INPUT_NOT_FOUND / JS_ERROR…
+
+        int expected = CountNonWhitespace(text);
+
+        if (kind == "CE")
+        {
+            // 1) Native editing pipeline.
+            try
+            {
+                await Core.CallDevToolsProtocolMethodAsync(
+                    "Input.insertText", JsonSerializer.Serialize(new { text }));
+            }
+            catch { /* fall through to execCommand */ }
+
+            if (await ComposerHoldsTextAsync(expected)) return "OK";
+
+            // 2) Legacy path.
+            await RunJsAsync(InsertViaExecCommandScript(text));
+            return await ComposerHoldsTextAsync(expected) ? "OK" : "INSERT_FAILED";
+        }
+
+        await RunJsAsync(SetTextareaValueScript(text));
+        return await ComposerHoldsTextAsync(expected) ? "OK" : "INSERT_FAILED";
+    }
+
+    /// <summary>Lets the page believe it is focused/visible even if another app has OS focus.</summary>
+    private async Task EnsureFocusEmulationAsync()
+    {
+        try
+        {
+            await Core.CallDevToolsProtocolMethodAsync(
+                "Emulation.setFocusEmulationEnabled", "{\"enabled\":true}");
+        }
+        catch { /* best effort — older runtimes may not support it */ }
+    }
+
+    private static int CountNonWhitespace(string s)
+    {
+        int n = 0;
+        foreach (char c in s)
+            if (!char.IsWhiteSpace(c)) n++;
+        return n;
+    }
+
+    /// <summary>
+    /// Polls (up to ~8 s — a 100k+ character paste takes the editor a while) until the composer
+    /// contains at least 95 % of the expected non-whitespace characters.
+    /// </summary>
+    private async Task<bool> ComposerHoldsTextAsync(int expectedNonWs)
+    {
+        var sw = Stopwatch.StartNew();
+        while (true)
+        {
+            string? raw = await RunJsAsync(ComposerLengthScript());
+            if (int.TryParse(raw, out int have) && have >= expectedNonWs * 0.95)
+                return true;
+            if (sw.ElapsedMilliseconds >= 8_000) return false;
+            await Task.Delay(200);
+        }
+    }
+
+    private string PrepareComposerScript() => $@"
+(function() {{
+    const el = {InputSelectorJs};
+    if (!el) return 'INPUT_NOT_FOUND';
+    try {{ window.focus(); }} catch (_) {{}}
+    el.focus();
+    if (el.isContentEditable) {{
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        return 'CE';
+    }}
+    return 'TA';
+}})()";
+
+    private string ComposerLengthScript() => $@"
+(function() {{
+    const el = {InputSelectorJs};
+    if (!el) return -1;
+    const t = (el.value !== undefined ? el.value : (el.textContent || '')) + '';
+    return t.replace(/\s+/g, '').length;
+}})()";
+
+    private string InsertViaExecCommandScript(string text) => $@"
 (function() {{
     const el = {InputSelectorJs};
     if (!el) return 'INPUT_NOT_FOUND';
     el.focus();
-    if (el.isContentEditable) {{
-        document.execCommand('selectAll', false, null);
-        document.execCommand('insertText', false, {jsText});
-        el.dispatchEvent(new InputEvent('input', {{ bubbles: true, cancelable: true }}));
-    }} else {{
-        try {{
-            const setter = Object.getOwnPropertyDescriptor(
-                HTMLTextAreaElement.prototype, 'value').set;
-            setter.call(el, {jsText});
-        }} catch(_) {{ el.value = {jsText}; }}
-        el.dispatchEvent(new InputEvent('input',  {{ bubbles: true, cancelable: true }}));
-        el.dispatchEvent(new Event ('change', {{ bubbles: true }}));
-    }}
+    document.execCommand('selectAll', false, null);
+    document.execCommand('insertText', false, {JsString(text)});
+    el.dispatchEvent(new InputEvent('input', {{ bubbles: true, cancelable: true }}));
     return 'OK';
 }})()";
-        return await RunJsAsync(script) ?? "JS_RETURNED_NULL";
-    }
 
-    private async Task<string> ClickSendAsync()
+    private string SetTextareaValueScript(string text) => $@"
+(function() {{
+    const el = {InputSelectorJs};
+    if (!el) return 'INPUT_NOT_FOUND';
+    el.focus();
+    try {{
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+        setter.call(el, {JsString(text)});
+    }} catch (_) {{ el.value = {JsString(text)}; }}
+    el.dispatchEvent(new InputEvent('input',  {{ bubbles: true, cancelable: true }}));
+    el.dispatchEvent(new Event ('change', {{ bubbles: true }}));
+    return 'OK';
+}})()";
+
+    /// <summary>One-line state dump used when Send can't be enabled — says WHY.</summary>
+    private async Task<string> DescribeSendBlockerAsync()
     {
         string script = $@"
 (function() {{
+    const el = {InputSelectorJs};
+    let chars = -1;
+    if (el) chars = ((el.value !== undefined ? el.value : (el.textContent || '')) + '').replace(/\s+/g, '').length;
+    const btn = {SendButtonJs};
+    const alerts = Array.from(document.querySelectorAll('[role=""alert""], [class*=""toast""]'))
+        .map(a => (a.innerText || '').trim()).filter(t => t).slice(0, 2).join(' | ').slice(0, 160);
+    return JSON.stringify({{
+        composerChars: chars,
+        sendButton: btn ? (btn.getAttribute('data-testid') || btn.getAttribute('aria-label') || 'button') : null,
+        visibility: document.visibilityState,
+        hasFocus: document.hasFocus(),
+        alert: alerts
+    }});
+}})()";
+        return await RunJsAsync(script) ?? "no page state";
+    }
+
+    // A very large prompt (Prompt.txt is ~125k chars) takes the page's editor a while to
+    // register, and the Send button stays disabled until it has. A fixed delay + a single
+    // click therefore "loads" the prompt but never submits it. Instead we wait until the
+    // button is actually enabled, click, then CONFIRM the message was submitted.
+    protected virtual int SendReadyMaxWaitMs => 30_000;
+    protected virtual int SendReadyPollMs    => 250;
+    protected virtual int SendVerifyMaxMs    => 8_000;
+    protected virtual int SendMaxAttempts    => 3;
+
+    private async Task<string> ClickSendWhenReadyAsync()
+    {
+        string last = "BTN_NOT_FOUND";
+
+        for (int attempt = 1; attempt <= SendMaxAttempts; attempt++)
+        {
+            // 1) Wait for the Send button to exist AND be enabled.
+            var wait = System.Diagnostics.Stopwatch.StartNew();
+            while (true)
+            {
+                last = await RunJsAsync(SendReadyProbeScript()) ?? "JS_RETURNED_NULL";
+                if (last == "READY") break;
+                if (wait.ElapsedMilliseconds >= SendReadyMaxWaitMs) return last;
+                await Task.Delay(SendReadyPollMs);
+            }
+
+            // 2) Click.
+            last = await RunJsAsync(ClickSendScript()) ?? "JS_RETURNED_NULL";
+            if (last != "SENT") continue;                       // button vanished/disabled again → re-wait
+
+            // 3) Confirm submission. Only if the text is STILL sitting unsent do we loop and
+            //    click again, so a slow-but-successful submit can never be sent twice.
+            if (await WaitForSubmissionAsync()) return "SENT";
+            last = "NOT_SUBMITTED";
+        }
+
+        return last;
+    }
+
+    /// <summary>True once the reply started streaming or the composer was cleared.</summary>
+    private async Task<bool> WaitForSubmissionAsync()
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < SendVerifyMaxMs)
+        {
+            await Task.Delay(SendReadyPollMs);
+            string? r = await RunJsAsync(SubmittedProbeScript());
+            if (r == "YES") return true;
+        }
+        return false;
+    }
+
+    private string SendReadyProbeScript() => $@"
+(function() {{
+    const btn = {SendButtonJs};
+    if (!btn) return 'BTN_NOT_FOUND';
+    if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return 'BTN_DISABLED';
+    return 'READY';
+}})()";
+
+    private string ClickSendScript() => $@"
+(function() {{
     const btn = {SendButtonJs};
     if (!btn)         return 'BTN_NOT_FOUND';
-    if (btn.disabled) return 'BTN_DISABLED';
+    if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return 'BTN_DISABLED';
     btn.click();
     return 'SENT';
 }})()";
-        return await RunJsAsync(script) ?? "JS_RETURNED_NULL";
-    }
+
+    private string SubmittedProbeScript() => $@"
+(function() {{
+    // Reply already streaming → definitely submitted.
+    if ({IsGeneratingJs}) return 'YES';
+    // Composer emptied → the page took the message.
+    const el = {InputSelectorJs};
+    if (!el) return 'NO';
+    const txt = (el.value !== undefined ? el.value : (el.innerText || el.textContent || '')) + '';
+    return txt.trim().length === 0 ? 'YES' : 'NO';
+}})()";
 
     // ─── Utilities ────────────────────────────────────────────────────────────
 

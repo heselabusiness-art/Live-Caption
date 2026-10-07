@@ -97,9 +97,9 @@ public static class PreInterviewIngestionPipeline
         PreInterviewIngestionStep.JdAnalysis =>
             "Needs Resume + JD. Fills skills, projects, focus areas, through-line.",
         PreInterviewIngestionStep.ProjectGeneration =>
-            "Needs Resume + JD. Adds ONE project story (appends on re-run).",
+            "Needs Resume + JD. Writes ONE project story (replaces the previous one).",
         PreInterviewIngestionStep.SystemDesignGeneration =>
-            "Needs Resume + JD. Adds ONE system design scenario (appends on re-run).",
+            "Needs Resume + JD. Writes ONE system design scenario (replaces the previous one).",
         _ => ""
     };
 
@@ -216,9 +216,9 @@ public static class PreInterviewIngestionPipeline
         PreInterviewIngestionStep.JdAnalysis =>
             "Step 2 — Your inputs: Resume Summary + Job Description (required). Company / Seniority / Domain optional context.",
         PreInterviewIngestionStep.ProjectGeneration =>
-            "Step 3 — Your inputs: Resume Summary + Job Description (required). Adds ONE project story; run again to append.",
+            "Step 3 — Your inputs: Resume Summary + Job Description (required). Writes ONE project story; running again replaces it.",
         PreInterviewIngestionStep.SystemDesignGeneration =>
-            "Step 4 — Your inputs: Resume Summary + Job Description (required). Adds ONE scenario; run again to append.",
+            "Step 4 — Your inputs: Resume Summary + Job Description (required). Writes ONE scenario; running again replaces it.",
         _ => ""
     };
 
@@ -449,17 +449,26 @@ public static class PreInterviewIngestionPipeline
         return $"{titleLabel}: {title}{Environment.NewLine}{Environment.NewLine}{body}";
     }
 
-    public static string AppendToFormField(string? existing, string addition)
+    // Blocks written by earlier versions of the app were appended as
+    //   <story>\n\n---\n\n<next story, starting "Story:" or "Scenario:">
+    private static readonly Regex StoryBlockSeparator = new(
+        @"\r?\n[ \t]*\r?\n---[ \t]*\r?\n[ \t]*\r?\n(?=(?:Story|Scenario):)",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// The prompt carries exactly ONE project story and ONE system-design scenario (more makes
+    /// the message too long for ChatGPT). If a form field still holds several app-appended
+    /// stories from earlier runs, keep only the most recent one.
+    /// </summary>
+    /// <param name="found">How many app-written story blocks the field contained.</param>
+    public static string KeepSingleStory(string? text, out int found)
     {
-        addition = addition.Trim();
-        if (string.IsNullOrWhiteSpace(addition))
-            return existing?.Trim() ?? "";
+        found = 0;
+        if (string.IsNullOrWhiteSpace(text)) return "";
 
-        if (string.IsNullOrWhiteSpace(existing))
-            return addition;
-
-        return existing.TrimEnd() + Environment.NewLine + Environment.NewLine + "---" +
-               Environment.NewLine + Environment.NewLine + addition;
+        string[] blocks = StoryBlockSeparator.Split(text.Trim());
+        found = blocks.Length;
+        return blocks[^1].Trim();
     }
 
     private static IReadOnlyList<string> GetMissingRequiredKeys(

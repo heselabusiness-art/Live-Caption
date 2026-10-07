@@ -1179,8 +1179,9 @@ public partial class MainWindow : Window
                 string story = PreInterviewIngestionPipeline.FormatStoryForFormField(
                     V(f, "storyTitle"),
                     V(f, "projectStory"));
-                PiProjectStories.Text = PreInterviewIngestionPipeline.AppendToFormField(
-                    PiProjectStories.Text, story);
+                // ONE story only: a new ingest replaces the previous one (several stories make
+                // the full prompt too long for ChatGPT's per-message limit).
+                PiProjectStories.Text = story.Trim();
                 break;
             }
 
@@ -1190,8 +1191,7 @@ public partial class MainWindow : Window
                     V(f, "scenarioTitle"),
                     V(f, "systemDesignScenario"),
                     titleLabel: "Scenario");
-                PiSystemDesignScenarios.Text = PreInterviewIngestionPipeline.AppendToFormField(
-                    PiSystemDesignScenarios.Text, scenario);
+                PiSystemDesignScenarios.Text = scenario.Trim();
                 break;
             }
         }
@@ -1336,12 +1336,12 @@ public partial class MainWindow : Window
         // PROJECT STORIES
         prompt = Sub(prompt,
             @"PROJECT STORIES \(2 to 3, each with real numbers\): \[paste\. setting and users, the business problem, what I built and my role, the decision I made and what I rejected, real before/after metrics\]",
-            $"PROJECT STORIES (2 to 3, each with real numbers): {PiProjectStories?.Text}");
+            $"PROJECT STORIES (1 story, with real numbers): {PreInterviewIngestionPipeline.KeepSingleStory(PiProjectStories?.Text, out _)}");
 
         // SYSTEM DESIGN SCENARIOS
         prompt = Sub(prompt,
             @"SYSTEM DESIGN SCENARIOS \(1 to 3, each with real numbers\): \[paste\. what it does and its scale, the architecture I designed, key components and why, tradeoffs, how I handled scale and failure, real throughput/latency/cost\]",
-            $"SYSTEM DESIGN SCENARIOS (1 to 3, each with real numbers): {PiSystemDesignScenarios?.Text}");
+            $"SYSTEM DESIGN SCENARIOS (1 scenario, with real numbers): {PreInterviewIngestionPipeline.KeepSingleStory(PiSystemDesignScenarios?.Text, out _)}");
 
         return prompt;
     }
@@ -1388,6 +1388,7 @@ public partial class MainWindow : Window
         // A field that HAS a value but whose placeholder can't be found is recorded and
         // reported after sending, so prompt drift is visible instead of silent.
         var unmatched = new List<string>();
+        var notes     = new List<string>();      // informational, shown after a successful send
 
         string Sub(string text, string pattern, string value,
                    RegexOptions opts = RegexOptions.None)
@@ -1466,13 +1467,19 @@ public partial class MainWindow : Window
                      @"JOB DESCRIPTION: \[paste key JD requirements\]",
                      $"JOB DESCRIPTION: {PiJobDescription?.Text}");
         // PROJECT STORIES block
+        // ONE story only: the full prompt is already ~125k chars, and ChatGPT rejects messages over
+        // its per-message limit ("The message you submitted was too long").
+        string oneStory = PreInterviewIngestionPipeline.KeepSingleStory(PiProjectStories?.Text, out int storyBlocks);
+        if (storyBlocks > 1) notes.Add($"project stories: sent only the latest of {storyBlocks}");
         prompt = Sub(prompt,
-                     @"PROJECT STORIES \(from the project-story companion\. 2 to 3, each with real numbers\): \[paste\..*?leadership answers\]",
-                     $"PROJECT STORIES (from the project-story companion. 2 to 3, each with real numbers): {PiProjectStories?.Text}", sl);
+                     @"PROJECT STORIES \(from the project-story companion\.[^)]*\): \[paste\..*?leadership answers\]",
+                     $"PROJECT STORIES (from the project-story companion. 1 story, with real numbers): {oneStory}", sl);
         // SYSTEM DESIGN SCENARIOS block
+        string oneScenario = PreInterviewIngestionPipeline.KeepSingleStory(PiSystemDesignScenarios?.Text, out int scenarioBlocks);
+        if (scenarioBlocks > 1) notes.Add($"system design: sent only the latest of {scenarioBlocks}");
         prompt = Sub(prompt,
-                     @"SYSTEM DESIGN SCENARIOS \(from the system-design companion\. 1 to 3, each with real numbers\): \[paste\..*?""how did you build"" answers\]",
-                     $"SYSTEM DESIGN SCENARIOS (from the system-design companion. 1 to 3, each with real numbers): {PiSystemDesignScenarios?.Text}", sl);
+                     @"SYSTEM DESIGN SCENARIOS \(from the system-design companion\.[^)]*\): \[paste\..*?""how did you build"" answers\]",
+                     $"SYSTEM DESIGN SCENARIOS (from the system-design companion. 1 scenario, with real numbers): {oneScenario}", sl);
 
         if (string.IsNullOrWhiteSpace(prompt)) return;
         await SendPromptToAiAsync(prompt);
@@ -1483,6 +1490,10 @@ public partial class MainWindow : Window
                 $"{GptSendStatusLabel.Text}  ⚠ Not placed (Prompt.txt wording changed): " +
                 string.Join(", ", unmatched.Distinct()),
                 isError: true);
+        }
+        else if (notes.Count > 0 && GptSendStatusLabel.Text.EndsWith("Sent."))
+        {
+            SetSendStatus($"{GptSendStatusLabel.Text}  ℹ {string.Join("; ", notes)}", isError: false);
         }
     }
 
@@ -1737,7 +1748,12 @@ public partial class MainWindow : Window
     private async Task SendPromptToAiAsync(string fullPrompt)
     {
         if (string.IsNullOrWhiteSpace(fullPrompt)) return;
-        if (_isSending) return;
+        if (_isSending)
+        {
+            // Never drop a hotkey press silently.
+            SetSendStatus("Still sending the previous prompt — wait for it to finish, then press again.", isError: true);
+            return;
+        }
 
         WebChatAutomationBase? service = GetActiveWebChatService();
         if (service is null)
@@ -1863,42 +1879,48 @@ public partial class MainWindow : Window
     /// <summary>
     /// Home key / Vol Up: capture segment and send interview ROUND/QUESTION trigger.
     /// </summary>
-    private async Task CaptureAndSendAsync()
+    private Task CaptureAndSendAsync() =>
+        CaptureAndSendCoreAsync(BuildQuestionTriggerPrompt);
+
+    /// <summary>
+    /// Shared body of every capture+send hotkey. Never fails silently: an empty capture,
+    /// a busy sender, or an exception all surface in the send-status line.
+    /// </summary>
+    private async Task CaptureAndSendCoreAsync(Func<string, string> buildPrompt)
     {
-        string segment = _tracker.CaptureNextSegment();
-        ApplyCapturedSegmentToUi(segment);
+        try
+        {
+            string segment = _tracker.CaptureNextSegment();
+            ApplyCapturedSegmentToUi(segment);
 
-        if (string.IsNullOrEmpty(segment)) return;
+            if (string.IsNullOrEmpty(segment))
+            {
+                SetSendStatus(
+                    "Nothing to send: no new caption text since the last capture. " +
+                    "(Is capture running? Press Start, and make sure Live Captions is showing speech.)",
+                    isError: true);
+                return;
+            }
 
-        await SendPromptToAiAsync(BuildQuestionTriggerPrompt(segment));
+            await SendPromptToAiAsync(buildPrompt(segment));
+        }
+        catch (Exception ex)
+        {
+            SetSendStatus($"Hotkey error: {ex.Message}", isError: true);
+        }
     }
 
     /// <summary>
     /// End key / Vol Down: capture segment and send pushback trigger.
     /// </summary>
-    private async Task CaptureAndSendStarAsync()
-    {
-        string segment = _tracker.CaptureNextSegment();
-        ApplyCapturedSegmentToUi(segment);
-
-        if (string.IsNullOrEmpty(segment)) return;
-
-        await SendPromptToAiAsync(BuildPushbackTriggerPrompt(segment));
-    }
+    private Task CaptureAndSendStarAsync() =>
+        CaptureAndSendCoreAsync(BuildPushbackTriggerPrompt);
 
     /// <summary>
     /// Delete key (Tech Interview): capture segment, then send with the live-coding template.
     /// </summary>
-    private async Task CaptureAndSendTechAsync()
-    {
-        string segment = _tracker.CaptureNextSegment();
-        ApplyCapturedSegmentToUi(segment);
-
-        if (string.IsNullOrEmpty(segment)) return;
-
-        string prompt = $"ROUND: Coding\nQUESTION: \"{segment}\"";
-        await SendPromptToAiAsync(prompt);
-    }
+    private Task CaptureAndSendTechAsync() =>
+        CaptureAndSendCoreAsync(segment => $"ROUND: Coding\nQUESTION: \"{segment}\"");
 
     /// <summary>
     /// Returns the web-chat automation service whose target site is currently
@@ -1928,25 +1950,22 @@ public partial class MainWindow : Window
         Brush  fill;
         string label;
 
-        if (!_hotkeyRegistered && !_starHotkeyRegistered && !_techSendHotkeyRegistered)
+        // Report EVERY hotkey that failed to register (RegisterHotKey fails silently when another
+        // app — or another running copy of this one — already owns the key).
+        var failedKeys = new List<string>();
+        if (!_hotkeyRegistered)             failedKeys.Add("Home");
+        if (!_starHotkeyRegistered)         failedKeys.Add("End");
+        if (!_clearUpHotkeyRegistered)      failedKeys.Add("PageUp");
+        if (!_clearDownHotkeyRegistered)    failedKeys.Add("PageDown");
+        if (!_techCaptureHotkeyRegistered)  failedKeys.Add("Insert");
+        if (!_techSendHotkeyRegistered)     failedKeys.Add("Delete");
+        if (!_clickThroughHotkeyRegistered) failedKeys.Add("Ctrl+W");
+
+        if (failedKeys.Count > 0)
         {
             fill  = Brushes.OrangeRed;
-            label = " — Hotkeys unavailable (another app may own Home, End, or Delete).";
-        }
-        else if (!_hotkeyRegistered)
-        {
-            fill  = Brushes.OrangeRed;
-            label = " — Home hotkey unavailable. End (STAR) and Delete (tech) may still work.";
-        }
-        else if (!_starHotkeyRegistered)
-        {
-            fill  = Brushes.OrangeRed;
-            label = " — End hotkey unavailable. Home and Delete (tech) may still work.";
-        }
-        else if (!_techSendHotkeyRegistered)
-        {
-            fill  = Brushes.OrangeRed;
-            label = " — Delete hotkey unavailable. Home and End may still work.";
+            label = $" — Hotkeys NOT registered: {string.Join(", ", failedKeys)}. " +
+                    "Another app or another running copy of Live Caption Viewer owns them — close it and restart.";
         }
         else if (_lastCaptureTime is null)
         {

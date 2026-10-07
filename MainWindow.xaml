@@ -1039,18 +1039,18 @@
                                     <StackPanel>
                                         <TextBlock Style="{StaticResource PiGroupHeader}">
                                             <Run Text="After steps 3–4 — Stories &amp; scenarios"/>
-                                            <Run Text="  (one per ingest; click again to append)" Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontWeight="Normal"/>
+                                            <Run Text="  (one story each — ingesting again replaces it)" Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontWeight="Normal"/>
                                         </TextBlock>
                                         <TextBlock Text="PROJECT STORIES" Style="{StaticResource PiLabel}"/>
                                         <ui:TextBox x:Name="PiProjectStories"
                                                  Style="{StaticResource InputBox}"
-                                                 PlaceholderText="Step 3 adds one story — run again for a second"
+                                                 PlaceholderText="Step 3 writes one story (a new run replaces it)"
                                                  Height="120"
                                                  Margin="0,0,0,8"/>
                                         <TextBlock Text="SYSTEM DESIGN SCENARIOS" Style="{StaticResource PiLabel}"/>
                                         <ui:TextBox x:Name="PiSystemDesignScenarios"
                                                  Style="{StaticResource InputBox}"
-                                                 PlaceholderText="Step 4 adds one scenario — run again for a second"
+                                                 PlaceholderText="Step 4 writes one scenario (a new run replaces it)"
                                                  Height="120"/>
                                     </StackPanel>
                                 </Border>
