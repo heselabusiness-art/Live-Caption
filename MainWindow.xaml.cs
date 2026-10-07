@@ -1473,6 +1473,70 @@ public partial class MainWindow : Window
             DragMove();
     }
 
+    // ── Collapsible captions panel ───────────────────────────────────────────
+
+    private bool       _panelCollapsed;
+    private GridLength _savedBrowserWidth = new(2, GridUnitType.Star);
+    private GridLength _savedPanelWidth   = new(1, GridUnitType.Star);
+    private double     _savedMinWidth;
+    private double     _shrunkBy;
+
+    // Enough for the title-bar controls (toggle, opacity, Pass, minimize, close) plus a usable
+    // browser toolbar when the side panel is collapsed.
+    private const double CollapsedWindowMinWidth = 560;
+
+    private void TogglePanelButton_Click(object sender, RoutedEventArgs e)
+        => SetPanelCollapsed(!_panelCollapsed);
+
+    /// <summary>
+    /// Hides/shows the right-hand captions panel. When the window is in its normal state it also
+    /// shrinks/grows by the panel width, so the browser keeps its size and the whole overlay can
+    /// be made narrow.
+    /// </summary>
+    private void SetPanelCollapsed(bool collapsed)
+    {
+        if (collapsed == _panelCollapsed) return;
+        _panelCollapsed = collapsed;
+        bool normal = WindowState == WindowState.Normal;
+
+        if (collapsed)
+        {
+            _savedBrowserWidth = BrowserColumn.Width;
+            _savedPanelWidth   = PanelColumn.Width;
+            _shrunkBy          = PanelColumn.ActualWidth + SplitterColumn.ActualWidth;
+            _savedMinWidth     = MinWidth;
+
+            CaptionsPanel.Visibility = Visibility.Collapsed;
+            PanelSplitter.Visibility = Visibility.Collapsed;
+            PanelColumn.MinWidth     = 0;
+            PanelColumn.Width        = new GridLength(0);
+            SplitterColumn.Width     = new GridLength(0);
+            BrowserColumn.Width      = new GridLength(1, GridUnitType.Star);
+
+            MinWidth = CollapsedWindowMinWidth;               // lower the floor first…
+            if (normal) Width = Math.Max(CollapsedWindowMinWidth, Width - _shrunkBy);
+        }
+        else
+        {
+            if (normal) Width += _shrunkBy;                   // …grow back, then restore the floor
+            MinWidth = _savedMinWidth > 0 ? _savedMinWidth : 900;
+
+            SplitterColumn.Width     = new GridLength(6);
+            PanelColumn.MinWidth     = 320;
+            PanelColumn.Width        = _savedPanelWidth;
+            BrowserColumn.Width      = _savedBrowserWidth;
+            PanelSplitter.Visibility = Visibility.Visible;
+            CaptionsPanel.Visibility = Visibility.Visible;
+        }
+
+        TogglePanelButton.Icon = new Wpf.Ui.Controls.SymbolIcon(
+            collapsed ? Wpf.Ui.Controls.SymbolRegular.PanelRight24
+                      : Wpf.Ui.Controls.SymbolRegular.PanelRightContract24);
+        TogglePanelButton.ToolTip = collapsed
+            ? "Expand the captions panel"
+            : "Collapse the captions panel";
+    }
+
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)
         => WindowState = WindowState.Minimized;
 

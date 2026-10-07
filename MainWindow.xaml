@@ -192,12 +192,23 @@
                                FontWeight="SemiBold"/>
                     <TextBlock Text="Embedded browser + Windows 11 Live Captions reader"
                                Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                               FontSize="12"/>
+                               FontSize="12"
+                               TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
             </StackPanel>
 
             <!-- Window controls (right side) -->
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+
+                <!-- Collapse / expand the captions panel (red area) -->
+                <ui:Button x:Name="TogglePanelButton"
+                           Icon="{ui:SymbolIcon PanelRightContract24}"
+                           Appearance="Secondary"
+                           Width="34" Height="32"
+                           Padding="0"
+                           Margin="0,0,10,0"
+                           ToolTip="Collapse the captions panel"
+                           Click="TogglePanelButton_Click"/>
 
                 <!-- Opacity -->
                 <Border Style="{StaticResource Pill}" Margin="0,0,10,0">
@@ -263,9 +274,9 @@
         <!-- Main content: browser (left) | splitter | captions panel (right) -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*" MinWidth="380"/>
-                <ColumnDefinition Width="6"/>
-                <ColumnDefinition Width="1*" MinWidth="320"/>
+                <ColumnDefinition x:Name="BrowserColumn"  Width="2*" MinWidth="380"/>
+                <ColumnDefinition x:Name="SplitterColumn" Width="6"/>
+                <ColumnDefinition x:Name="PanelColumn"    Width="1*" MinWidth="320"/>
             </Grid.ColumnDefinitions>
 
             <!-- ============== BROWSER COLUMN ============== -->
@@ -392,15 +403,16 @@
             </Grid>
 
             <!-- Resize splitter -->
-            <GridSplitter Grid.Column="1"
+            <GridSplitter x:Name="PanelSplitter"
+                          Grid.Column="1"
                           Width="6"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch"
                           Background="Transparent"
                           ShowsPreview="True"/>
 
-            <!-- ============== CAPTIONS COLUMN ============== -->
-            <Grid Grid.Column="2">
+            <!-- ============== CAPTIONS COLUMN (collapsible) ============== -->
+            <Grid x:Name="CaptionsPanel" Grid.Column="2">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>              <!-- 0: capture status  -->
                     <RowDefinition Height="Auto"/>              <!-- 1: interview round -->
