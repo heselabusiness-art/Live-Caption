@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media;
 using LiveCaptionViewer.Services;
+using Wpf.Ui.Controls;
 
 namespace LiveCaptionViewer.Models;
 
@@ -70,15 +71,19 @@ public sealed class IngestionStepItem : INotifyPropertyChanged
         set => Set(ref _detail, value);
     }
 
-    public string Glyph => _state switch
+    /// <summary>Fluent icon for the current state (hidden while the progress ring is shown).</summary>
+    public SymbolRegular Symbol => _state switch
     {
-        IngestionStepState.Running => "▶",
-        IngestionStepState.Done => "✔",
-        IngestionStepState.Failed => "✖",
-        IngestionStepState.Skipped => "–",
-        IngestionStepState.Cancelled => "■",
-        _ => "○"
+        IngestionStepState.Running => SymbolRegular.ArrowSync24,
+        IngestionStepState.Done => SymbolRegular.CheckmarkCircle24,
+        IngestionStepState.Failed => SymbolRegular.DismissCircle24,
+        IngestionStepState.Skipped => SymbolRegular.SubtractCircle24,
+        IngestionStepState.Cancelled => SymbolRegular.RecordStop24,
+        _ => SymbolRegular.Circle24
     };
+
+    public Visibility IconVisibility =>
+        _state == IngestionStepState.Running ? Visibility.Collapsed : Visibility.Visible;
 
     public Brush GlyphBrush => _state switch
     {
@@ -104,7 +109,8 @@ public sealed class IngestionStepItem : INotifyPropertyChanged
         _state = state;
         Detail = detail;
         OnChanged(nameof(State));
-        OnChanged(nameof(Glyph));
+        OnChanged(nameof(Symbol));
+        OnChanged(nameof(IconVisibility));
         OnChanged(nameof(GlyphBrush));
         OnChanged(nameof(DetailBrush));
         OnChanged(nameof(RunningVisibility));

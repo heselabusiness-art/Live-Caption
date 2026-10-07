@@ -43,14 +43,12 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
     <!-- System.Drawing.Bitmap / Graphics for the Tech Interview screenshot capture. -->
     <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
   </ItemGroup>
 
   <!-- WebView2Loader must sit next to the exe; some setups fail with "Class not registered" otherwise. -->
   <Target Name="CopyWebView2Loader" AfterTargets="Build">
-    <Copy SourceFiles="$(OutDir)runtimes\win-$(PlatformTarget)\native\WebView2Loader.dll"
-          DestinationFolder="$(OutDir)"
-          SkipUnchangedFiles="true"
-          Condition="Exists('$(OutDir)runtimes\win-$(PlatformTarget)\native\WebView2Loader.dll')" />
+    <Copy SourceFiles="$(OutDir)runtimes\win-$(PlatformTarget)\native\WebView2Loader.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="Exists('$(OutDir)runtimes\win-$(PlatformTarget)\native\WebView2Loader.dll')" />
   </Target>
 
 </Project>

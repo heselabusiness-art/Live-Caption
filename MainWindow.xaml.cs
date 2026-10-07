@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -1025,7 +1025,7 @@ public partial class MainWindow : Window
         _ingestCts = new CancellationTokenSource();
         CancellationToken ct = _ingestCts.Token;
 
-        PiIngestStartButton.Content = "■  Stop";
+        SetIngestButton(running: true);
         foreach (IngestionStepItem s in _ingestSteps)
             s.CanEdit = false;
 
@@ -1077,14 +1077,9 @@ public partial class MainWindow : Window
 
                     string preview = PreInterviewIngestionPipeline.FormatVerificationPreview(parsed);
                     string stepName = PreInterviewIngestionPipeline.GetStepDisplayName(item.Step);
-                    MessageBoxResult verify = await Dispatcher.InvokeAsync(() =>
-                        MessageBox.Show(
-                            preview,
-                            $"{stepName} — verify ingestion",
-                            MessageBoxButton.YesNo,
-                            MessageBoxImage.Question));
+                    bool verify = await ConfirmIngestionAsync($"{stepName} — verify ingestion", preview);
 
-                    if (verify == MessageBoxResult.Yes)
+                    if (verify)
                     {
                         ApplyPreInterviewIngestion(parsed);
                         applied++;
@@ -1134,7 +1129,7 @@ public partial class MainWindow : Window
             _ingestCts?.Dispose();
             _ingestCts = null;
             _isSending = false;
-            PiIngestStartButton.Content = "▶  Start ingestion";
+            SetIngestButton(running: false);
             PiIngestStartButton.IsEnabled = true;
         }
     }
@@ -1204,17 +1199,62 @@ public partial class MainWindow : Window
 
     // ── Pre-interview Send ────────────────────────────────────────────────────
 
+    /// <summary>Start/Stop look of the ingestion button (label, icon, accent).</summary>
+    private void SetIngestButton(bool running)
+    {
+        PiIngestStartButton.Content    = running ? "Stop" : "Start ingestion";
+        PiIngestStartButton.Icon       = new Wpf.Ui.Controls.SymbolIcon(
+            running ? Wpf.Ui.Controls.SymbolRegular.Stop24 : Wpf.Ui.Controls.SymbolRegular.Play24);
+        PiIngestStartButton.Appearance = running
+            ? Wpf.Ui.Controls.ControlAppearance.Danger
+            : Wpf.Ui.Controls.ControlAppearance.Primary;
+    }
+
+    /// <summary>Themed verify dialog (WPF-UI); falls back to the native MessageBox if it cannot be shown.</summary>
+    private async Task<bool> ConfirmIngestionAsync(string title, string preview)
+    {
+        if (!Dispatcher.CheckAccess())
+            return await await Dispatcher.InvokeAsync(() => ConfirmIngestionAsync(title, preview));
+
+        try
+        {
+            var box = new Wpf.Ui.Controls.MessageBox
+            {
+                Title = title,
+                Content = new System.Windows.Controls.ScrollViewer
+                {
+                    MaxHeight = 420,
+                    VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+                    Content = new System.Windows.Controls.TextBlock
+                    {
+                        Text = preview,
+                        TextWrapping = TextWrapping.Wrap,
+                        FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas, Segoe UI"),
+                        FontSize = 12
+                    }
+                },
+                PrimaryButtonText = "Apply to form",
+                CloseButtonText = "Discard",
+                Owner = this,
+                Topmost = true,
+                MinWidth = 520,
+                MaxWidth = 760,
+                SizeToContent = SizeToContent.WidthAndHeight,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner
+            };
+            var result = await box.ShowDialogAsync();
+            return result == Wpf.Ui.Controls.MessageBoxResult.Primary;
+        }
+        catch
+        {
+            return System.Windows.MessageBox.Show(
+                preview, title, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+        }
+    }
     private void PromptModeToggle_Changed(object sender, RoutedEventArgs e)
     {
         bool isIndividual = PromptModeToggle.IsChecked == true;
-        PromptModeToggle.Content     = isIndividual ? "Individual" : "Full";
-        PromptModeToggle.Foreground  = isIndividual
-            ? System.Windows.Media.Brushes.DodgerBlue
-            : System.Windows.Media.Brushes.Gray;
-        PromptModeToggle.BorderBrush = isIndividual
-            ? System.Windows.Media.Brushes.DodgerBlue
-            : new System.Windows.Media.SolidColorBrush(
-                System.Windows.Media.Color.FromRgb(0x55, 0x55, 0x55));
+        PromptModeToggle.Content = isIndividual ? "Individual" : "Full";
     }
 
     /// <summary>
@@ -1459,14 +1499,10 @@ public partial class MainWindow : Window
         else
             SetWindowLong(_hwnd, GWL_EXSTYLE, exStyle & ~WS_EX_TRANSPARENT);
 
-        ClickThroughButton.Content        = _clickThroughEnabled ? "🖱 Pass ✓" : "🖱 Pass";
-        ClickThroughButton.Foreground     = _clickThroughEnabled
-            ? System.Windows.Media.Brushes.LimeGreen
-            : System.Windows.Media.Brushes.Gray;
-        ClickThroughButton.BorderBrush    = _clickThroughEnabled
-            ? System.Windows.Media.Brushes.LimeGreen
-            : new System.Windows.Media.SolidColorBrush(
-                System.Windows.Media.Color.FromRgb(0x55, 0x55, 0x55));
+        ClickThroughButton.Content    = _clickThroughEnabled ? "Pass ON" : "Pass";
+        ClickThroughButton.Appearance = _clickThroughEnabled
+            ? Wpf.Ui.Controls.ControlAppearance.Success
+            : Wpf.Ui.Controls.ControlAppearance.Secondary;
         ClickThroughButton.ToolTip        = _clickThroughEnabled
             ? "Click-Through ON — clicks pass to app below  (Ctrl+W to toggle off)"
             : "Click-Through OFF — clicks land on this app  (Ctrl+W to toggle)";
@@ -1856,7 +1892,7 @@ public partial class MainWindow : Window
         if (CaptionTabControl.SelectedItem is not System.Windows.Controls.TabItem tab)
             return false;
 
-        return tab.Header?.ToString() == "Tech Interview";
+        return ReferenceEquals(tab, TechInterviewTab);
     }
 
     private void UpdateStatusUi(CaptureStatus status, string? errorDetail)
