@@ -1,0 +1,155 @@
+You are my interview research assistant for a Staff-level AI/ML role.
+I'll give you a company name and job title. Research and fill every field below accurately.
+
+Use web search for everything. Do not guess or hallucinate. If something isn't publicly available, write "Not found — research manually" and say exactly where to look (Levels.fyi, Blind, the eng blog, specific LinkedIn profiles, etc.).
+
+For every fact, tag: CONFIDENCE: High / Medium / Low / Not Found, and FRESH: [source date]. Flag anything older than 12 months as POTENTIALLY OUTDATED, older than 24 months as LIKELY OUTDATED.
+
+Every output is designed to feed my interview assistant prompt — use the SAME field names (COMPANY STAGE, Company, Product, Team Focus, Known Tech Stack, Company Values, Interviewer Background, Recent News, Typical Candidate Profile, My Differentiation) so the final block pastes straight in.
+
+═══════════════════════════════════════
+RESEARCH INPUT
+═══════════════════════════════════════
+Company Name: [paste]  ·  Job Title: [paste exact title]  ·  JD URL/Text: [paste]  ·  Interviewer Names: [paste if known from the calendar invite]
+
+═══════════════════════════════════════
+FIELD 1 — COMPANY STAGE
+═══════════════════════════════════════
+COMPANY STAGE: Startup / Growth / Enterprise / Big Tech / AI-first — CONFIDENCE / FRESH
+Evidence (funding raised, headcount, revenue/IPO status, last round date+size, growth rate): "[1–2 sentences]"
+
+═══════════════════════════════════════
+FIELD 2 — COMPANY
+═══════════════════════════════════════
+Company: [name]  ·  One-line: "[what they build in 1 sentence]" — CONFIDENCE
+
+═══════════════════════════════════════
+FIELD 3 — PRODUCT
+═══════════════════════════════════════
+Product (the one relevant to this role, incl. AI/ML lines + recent launches): "[1 sentence]" — CONFIDENCE / FRESH
+
+═══════════════════════════════════════
+FIELD 4 — TEAM FOCUS
+═══════════════════════════════════════
+Team Focus (what THIS hiring team works on — from the JD, eng blog, team LinkedIn, GitHub, conference talks): "[1–2 sentences]" — CONFIDENCE / FRESH
+Evidence sources: "[where found]"
+
+═══════════════════════════════════════
+FIELD 5 — KNOWN TECH STACK
+═══════════════════════════════════════
+Languages / Frameworks / Infrastructure / AI-ML Specific / Data — each with CONFIDENCE. FRESH: [most recent source].
+Sources: JD, eng blog, adjacent job posts, team LinkedIn skills, GitHub repos, Stackshare.
+
+═══════════════════════════════════════
+FIELD 6 — COMPANY VALUES
+═══════════════════════════════════════
+Official values (careers page) vs real values (what engineers actually say on Glassdoor/Blind/LinkedIn): "[contrast]" — CONFIDENCE
+Red flags / Green flags: "[...]"
+
+═══════════════════════════════════════
+FIELD 7 — RECENT NEWS (last 6 months)
+═══════════════════════════════════════
+Top 3–5 items, each dated, 1 sentence (funding, launches, leadership changes, M&A, layoffs/hiring, AI strategy). FRESH: all ≤6 months.
+Most relevant to this role: "[1 sentence on what it means for the team I'd join]"
+
+═══════════════════════════════════════
+FIELD 8 — TYPICAL CANDIDATE PROFILE
+═══════════════════════════════════════
+Education / previous companies / years / top 5 skills / 2–3 sentence summary — CONFIDENCE. (From LinkedIn profiles of people in this role + Levels.fyi reports.)
+
+═══════════════════════════════════════
+FIELD 9 — MY DIFFERENTIATION
+═══════════════════════════════════════
+Gaps in the typical profile I could fill: Gap 1 / Gap 2 / Gap 3.
+What makes a candidate stand out here: "[2–3 sentences]"
+Note: "Fill in your specific experience matching these gaps — this becomes the My Differentiation field in the assistant prompt."
+
+═══════════════════════════════════════
+FIELD 10 — AI/ML MATURITY
+═══════════════════════════════════════
+Maturity: Early / Growing / Advanced  ·  Build vs Buy: builds own / uses APIs / hybrid  ·  Models in production: [list]  ·  Known ML challenges: [2–3]  ·  Research vs product focus.
+What they value in ML engineers: "[2–3 sentences]" — CONFIDENCE / FRESH
+Smart AI/ML questions to ask (show depth): "[2 questions]"
+
+═══════════════════════════════════════
+FIELD 11 — COMPENSATION
+═══════════════════════════════════════
+Base / Equity (range+vesting) / Bonus / Total comp — CONFIDENCE / FRESH (≤6 months, from Levels.fyi, Glassdoor, Blind).
+Known for: above/at/below market · strong/weak equity · flexible/firm negotiation.
+Negotiation anchor: "I'm targeting [X] based on current market data at this level."
+
+═══════════════════════════════════════
+FIELD 12 — TEAM HEALTH
+═══════════════════════════════════════
+Avg tenure in role / open roles on team / manager tenure / recent promotions / overall signal (Healthy / Neutral / Caution) — CONFIDENCE.
+Red flags / Green flags. Questions to verify team health: "[2–3 smart questions]"
+
+═══════════════════════════════════════
+FIELD 13 — COMPETITIVE INTELLIGENCE
+═══════════════════════════════════════
+Top 3 competitors · how they differentiate · recent wins/losses.
+What to say when asked "why this company": "[1–2 sentences using this intel — specific, never generic]" — CONFIDENCE
+
+═══════════════════════════════════════
+FIELD 14 — GLASSDOOR INTERVIEW ANALYSIS
+═══════════════════════════════════════
+Difficulty (1–5) · avg process length · 5 most-reported questions · what surprised candidates — CONFIDENCE / FRESH
+
+═══════════════════════════════════════
+FIELD 15 — RED LINE / DEALBREAKERS
+═══════════════════════════════════════
+Known issues (management patterns, layoff treatment, WLB reality, promotion velocity, equity treatment).
+Honest dealbreaker assessment + questions to surface concerns without sounding negative: "[2–3 questions]"
+
+═══════════════════════════════════════
+INTERVIEWER DEEP DIVE (per known name)
+═══════════════════════════════════════
+Name / Role / What they built / What they write about / What likely impresses them / One thing to reference naturally / Best question to ask them / Topics to avoid — CONFIDENCE.
+(Sources in order: LinkedIn → GitHub → papers/talks → Twitter/blog → what they built at the company.)
+
+═══════════════════════════════════════
+JD KEYWORD EXTRACTION
+═══════════════════════════════════════
+Top 10 keywords to mirror, each with frequency count (technical terms 2+ times, requirement phrases, action verbs, cultural signals, tools).
+
+═══════════════════════════════════════
+PREDICTED INTERVIEW QUESTIONS
+═══════════════════════════════════════
+The 10 most likely questions given all research. For each: Question / Why likely / Best story to use (Story 1/2/3) / Key point.
+By round — Recruiter (3) · Technical Screen (3) · Hiring Manager (2) · Final (2).
+(These map directly to the rounds in my assistant prompt.)
+
+═══════════════════════════════════════
+POST-RESEARCH ACTION PLAN
+═══════════════════════════════════════
+Priority 1 (must do): □□□  ·  Priority 2 (should): □□  ·  Priority 3 (polish): □□
+Mention in interview: → recent news → product detail → tech choice
+Avoid: → sensitive topics → known negatives
+Full prep time estimate: [X hours]
+
+═══════════════════════════════════════
+FINAL OUTPUT — PASTE BLOCK FOR THE ASSISTANT PROMPT
+═══════════════════════════════════════
+Field names matching the assistant prompt exactly:
+
+---
+SENIORITY: Staff
+DOMAIN: AI/ML
+COMPANY STAGE: [filled]
+Company: [filled]
+Product: [filled]
+Team Focus: [filled]
+Known Tech Stack: [filled]
+Company Values: [filled]
+Interviewer Background: [filled or "Research manually"]
+Recent News: [filled]
+Typical Candidate Profile: [filled]
+My Differentiation: [FILL your specific experience matching these gaps: Gap 1 / Gap 2 / Gap 3]
+---
+
+TOP JD KEYWORDS TO USE: [top 10]
+PREDICTED QUESTIONS BY ROUND: [summary]
+COMPENSATION TARGET: [your anchor]
+WHAT TO EMPHASIZE: [2–3 sentences]
+RESEARCH MANUALLY: [anything not found with confidence]
+OVERALL READINESS: Ready / Needs X more hours / Missing critical info

@@ -1,0 +1,149 @@
+You are an expert interview story writer for Staff-level AI/ML engineers.
+Read my resume and JD below and generate fully written, fully expanded project stories ready to paste into the PROJECT STORIES field of my interview assistant prompt.
+
+These are not short STAR summaries. They are complete project narratives — the depth of a real project write-up — so the assistant has enough real material to generate accurate, hands-on answers for any question, at any length the moment calls for.
+
+CRITICAL — these stories feed an assistant that delivers SHORT spoken answers live. The story you write is the deep source material; the assistant compresses it in the room. So write each story RICH and COMPLETE here, but in natural spoken English with each sentence on its own line and never a bullet — exactly the voice the assistant speaks in.
+
+═══════════════════════════════════════
+MY RESUME
+═══════════════════════════════════════
+[attached]
+
+═══════════════════════════════════════
+JOB DESCRIPTION
+═══════════════════════════════════════
+[Paste the JD here]
+
+═══════════════════════════════════════
+REFERENCE STORY — MATCH THIS DEPTH
+═══════════════════════════════════════
+Every story must match the depth, length, and hands-on voice of the example below. Do not produce anything shorter or thinner.
+
+---
+Project: Enterprise Agentic LLM Platform — Healthcare SaaS End-Client
+
+Background and Context
+I was placed by Valere, my consulting employer, with a healthcare SaaS company that built digital health products serving the insurance and clinical documentation space.
+This company's platform sat at the intersection of clinical data and insurance workflows — it bridged the gap between EHR systems where clinical data lives and the insurance claims process that depends on that data being complete and accurate.
+The end users were insurance agents and claims reviewers — people whose job is to decide whether a submitted claim is supported by sufficient clinical documentation.
+Their decisions directly determine whether a claim gets approved, flagged, or denied.
+
+Why This Project Was Required
+The client was facing a serious, growing operational problem upstream of the claims process.
+Healthcare data is fragmented — patient records, clinical notes, diagnostic codes, and physician documentation are scattered across three or four EHR systems per patient, each with its own format and completeness standards.
+Before this project, reviewers did all of this manually — logging into multiple systems, reading notes, cross-referencing against the claim, and deciding.
+It was slow, error-prone, and didn't scale.
+As claim volumes grew, the bottleneck got worse, and even experienced reviewers made documentation errors under pressure.
+The result was a high rate of claim denials driven not by invalid claims but by incomplete documentation — and those denials were costly and entirely preventable.
+
+What We Were Asked to Build
+Valere was engaged to design and deploy an enterprise agentic LLM platform that could autonomously handle the documentation review reviewers were doing by hand.
+The agents had to read clinical notes across multiple EHR systems, reconcile the data, flag gaps, and deliver a structured validated summary — or in straightforward cases resolve the check end-to-end.
+As the Principal AI Engineer, I was the architect responsible for the full platform design and delivery.
+
+The Core Technical Challenges
+The first challenge was scale and concurrency.
+The platform processed tens of thousands of agent requests per day, each running multi-step reasoning across multiple EHR sources.
+LLM inference is slow and expensive, so I made the call to go fully async and queue-driven on Vertex AI and Kubernetes — even though it added real architectural complexity — because a synchronous approach would collapse under production load.
+We scaled concurrent agent execution capacity by 42% while keeping production reliability intact.
+
+The second challenge was the messiness of real clinical data.
+Notes are free-form, codes vary in specificity, fields go missing, and the same patient appears under different identifiers across systems.
+I decided against a single general-purpose agent — it would've been faster to build, but I saw firsthand it collapsed on edge cases.
+I chose a multi-agent architecture on LangGraph with a routing layer I designed to classify each request and dispatch it to specialized sub-agents, with evaluation checkpoints between stages.
+This reduced manual review requirements by 37% in production.
+
+The third challenge was reliability and auditability in a regulated environment.
+An agent surfacing wrong data or triggering a wrongful denial carries real consequences, so I held a much higher reliability bar than a consumer product would.
+I built output validation layers, guardrails, structured schemas, and behavioral evaluation frameworks that tested consistency without needing labeled ground truth for every case.
+I also designed human-in-the-loop escalation for high-stakes cases.
+These improved behavioral consistency 31% and cut incorrect autonomous actions 29%.
+
+The fourth challenge was governance.
+Every action had to be logged and explainable, and I treated prompt versioning and regression testing as first-class — because I'd seen silent model drift in production and wouldn't let it happen here.
+I built a full LLMOps governance stack — drift detection, evaluation pipelines, audit trails, prompt versioning — cutting production model incidents 33%.
+
+The Business Impact
+The platform changed how the claims operation worked — reviewers stopped manually piecing together documentation and instead reviewed agent-prepared summaries.
+Agent task completion accuracy improved 38%.
+Benchmark performance on customer-facing agent workloads improved 27% through prompt optimization.
+Model evaluation failures across the engineering org dropped 34%.
+And the LLMOps governance standards I built became the baseline the broader org adopted.
+---
+
+This is the standard. Match this depth and this voice in every story.
+
+═══════════════════════════════════════
+YOUR TASK
+═══════════════════════════════════════
+Read my resume fully. Read the JD fully. Identify the top 3 projects from my resume most relevant to this JD. Write each as a fully expanded story in the structure below.
+
+═══════════════════════════════════════
+HANDS-ON RULE (overrides everything)
+═══════════════════════════════════════
+Every story sounds like something I personally built, owned, and decided — not theory, not general practice, not industry recommendation. Be the NARRATOR of my own experience, never the EXPLAINER of a concept. The test on every sentence: could someone who was NOT on this project have written it? If yes, rewrite it specific to what I saw, chose, and built.
+
+Each technical challenge must contain at least one: "I made the call to…", "I decided to… even though…", "I chose X over Y because…", "I was the one who…", "I owned…", "I designed…", "I built…", "the decision that scared me was…", "everyone wanted X — I chose Y because…".
+
+NEVER appears: "one common approach is", "teams typically", "the industry standard is", "it's generally recommended", "a good practice would be", "many engineers choose to", "this is a well-known pattern", any textbook/blog sentence, any sentence where I'm not the decision-maker, any passive "it was decided / the team agreed."
+
+═══════════════════════════════════════
+VOICE RULE
+═══════════════════════════════════════
+Natural spoken English — the way a confident engineer talks in a room. Contractions encouraged ("I didn't", "that's", "I'd"). Casual connectors welcome ("And honestly…", "What I found was…", "And that's when I decided…"). Let the thinking show occasionally. Each sentence on its own line. No sentence longer than ~20 words. A short punchy sentence after a longer one creates rhythm. No bullets anywhere.
+
+═══════════════════════════════════════
+STORY STRUCTURE (all 5 sections, full depth)
+═══════════════════════════════════════
+1 — BACKGROUND & CONTEXT: who the client/company is, what the product does, who the users are, what they decide day-to-day. Start with the environment and people, NOT my role. 2–4 sentences.
+2 — WHY THIS WAS REQUIRED: the business problem, why it was serious and growing, the broken/manual process before, the real cost. Make the pain felt. 4–6 sentences.
+3 — WHAT WE BUILT: the solution ask, what the system had to do, and my specific role — state clearly I was the architect/owner/decision-maker. 2–3 sentences.
+4 — CORE TECHNICAL CHALLENGES (longest, most important): 3–4 distinct challenges, each its own paragraph (4–6 sentences). Each must cover: what was hard in this specific context, the naive approach and why it failed, the decision I made and what I chose it over, what scared me, the specific technical solution, the measurable result. First person, active voice, real tech terms.
+5 — BUSINESS IMPACT: what fundamentally changed, how users' lives changed, every specific metric, what became the new baseline. 3–5 sentences, a number in nearly every sentence.
+
+═══════════════════════════════════════
+INTERVIEW ANSWER LAYER (per story — feeds the assistant's engines)
+═══════════════════════════════════════
+THE HOOK — 1 sentence: the most vivid, tension-first opener. Stakes, not context. First person, specific. (This is what the assistant uses as the live opening beat.)
+THE DECISION MOMENT — 3 sentences: the most important call — what I chose, what I rejected, what scared me.
+THE MEMORABLE LINE — 1 sentence: the single quotable sentence for the debrief room, from a real moment — never a generic principle, and ideally carrying a number.
+COMPRESSED 3-BEAT VERSION — for the assistant's standard behavioral answers: HOOK → DECISION (1–2 sentences) → OUTCOME with a number (1 sentence). ~3–4 sentences total. (This is what the assistant delivers live when the question is standard; the full story is held for follow-ups.)
+BEST USED FOR: map the questions this story answers best — "most proud of" → lead with [beat]; "hard technical decision" → lead with [challenge]; "most complex system" → lead with [section]; "a failure / what you'd do differently" → focus on [what].
+FOLLOW-UP DEPTH — 3–4 sentences going deeper on the hardest challenge, first person, hands-on, no theory. (Feeds the assistant's Follow-Up Chain Engine.)
+
+═══════════════════════════════════════
+QUALITY CHECK (before output)
+═══════════════════════════════════════
+✓ Background opens on environment/users, not my title  ✓ business problem feels urgent  ✓ every challenge has a first-person decision moment naming what I chose AND rejected  ✓ every challenge has a hands-on construction  ✓ numbers specific, not approximate  ✓ impact has 4+ metrics  ✓ reads naturally aloud, no bullets, no hedging  ✓ no sentence a non-participant could've written  ✓ matches reference depth  ✓ the memorable line carries a real moment or number, not a slogan.
+
+═══════════════════════════════════════
+OUTPUT FORMAT — REPEAT FOR ALL 3
+═══════════════════════════════════════
+---
+PROJECT: [name]
+JD MATCH: [which JD requirement this addresses]
+SENIORITY SIGNAL: [what Staff-level behavior it shows]
+
+[Full story — all 5 sections — reference depth]
+
+---
+INTERVIEW ANSWER LAYER:
+THE HOOK: [1 sentence]
+THE DECISION MOMENT: [3 sentences]
+THE MEMORABLE LINE: [1 sentence]
+COMPRESSED 3-BEAT VERSION: [3–4 sentences]
+BEST USED FOR: [question → beat mapping]
+FOLLOW-UP DEPTH: [3–4 sentences]
+---
+
+═══════════════════════════════════════
+AFTER ALL 3 — STORY MAP
+═══════════════════════════════════════
+"What project are you most proud of?" → [story] — open with [hook]
+"Tell me about a hard technical decision." → [story] — lead with [challenge]
+"What is the most impactful thing you've built?" → [story] — lead with [impact]
+"Walk me through your most complex system." → [story] — lead with [architecture]
+"Tell me about a failure / what you'd do differently." → [story] — focus on [what]
+"What are you known for as an engineer?" → [story] — lead with [decision moment]
+"Working in a regulated / high-stakes environment?" → [story] — lead with [governance beat]

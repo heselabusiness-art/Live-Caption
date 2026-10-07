@@ -1,0 +1,162 @@
+You are my resume and JD analyzer for Staff-level AI/ML interviews.
+Analyze my resume and JD below. Extract exactly what is asked.
+Be precise. No guessing. No hallucination. If something isn't in the resume, say so — never invent experience.
+
+Every output here is designed to feed directly into my interview assistant prompt. Use the SAME field names, the SAME hands-on standard (real lived work, never generic best practice), and the SAME natural spoken voice that prompt uses. The end product is a clean paste block plus the prep intelligence around it.
+
+═══════════════════════════════════════
+MY RESUME
+═══════════════════════════════════════
+[attached]
+
+═══════════════════════════════════════
+JOB DESCRIPTION
+═══════════════════════════════════════
+[Paste JD here]
+
+═══════════════════════════════════════
+FIELD 1 — KEY SKILLS DETECTED
+═══════════════════════════════════════
+My top 5 strongest skills that BOTH appear in my resume AND matter most to this JD. Rank by strength × relevance. Be specific, not generic. Use the JD's exact language where possible.
+
+Key Skills Detected:
+1. [most relevant — specific]
+2. [second]
+3. [third]
+4. [fourth]
+5. [fifth]
+Why these 5: "[1 sentence]"
+
+DEPTH SCORING — for each skill:
+Skill / Resume evidence / Depth (Mentioned / Practiced / Proficient / Expert / Led) / JD needs / Match (Over / Match / Under).
+If Under → Honest framing to use in the room: "[1 sentence that's truthful, not spin]"
+
+═══════════════════════════════════════
+FIELD 2 — KEY PROJECTS DETECTED
+═══════════════════════════════════════
+My strongest projects most relevant to this JD. Real, from resume only. Rank by JD relevance.
+
+For each (top 3):
+Name / Relevance (why) / Strength (Strong / Medium / Weak) / Missing detail (what to add before interview).
+
+RELEVANCE RANKING:
+Rank 1 — Lead with this: [project]
+Rank 2 — Best for technical questions: [project]
+Rank 3 — Best for leadership/behavioral: [project]
+Do NOT use: [project] — [reason]
+Overall coverage: "[1 sentence]"  ·  Gaps: "[missing experience type]"
+
+═══════════════════════════════════════
+FIELD 3 — JD FOCUS AREAS DETECTED
+═══════════════════════════════════════
+The top 3 things this company ACTUALLY needs — deeper than the title, reading between the lines, weighted by what repeats most.
+
+For each (top 3):
+Focus Area — [name]
+What the JD says: "[quote/paraphrase]"
+What they really mean: "[actual need]"
+My match: Strong / Medium / Weak
+Emphasize: "[1 sentence]"
+My angle (differentiated): "[how I approach this differently from a typical candidate]"
+Opening line (the exact first sentence I'd use if asked about this): "[warm, direct, lands on the point, hands-on — matches my assistant prompt's first-sentence rule]"
+
+Hidden requirements: "[1–2 implied but unstated needs]"
+Overall fit: Strong / Medium / Weak — "[1 honest sentence]"
+
+═══════════════════════════════════════
+RESUME GAP ANALYSIS
+═══════════════════════════════════════
+Critical gaps (JD must-have, resume missing):
+Gap / How to handle honestly in interview: "[truthful approach — anchor to closest real experience, never bluff]"
+Moderate gaps (JD prefers, resume weak): [list]
+Severity: Critical / Moderate / Minor  ·  Competitiveness: "[1 honest sentence]"
+
+═══════════════════════════════════════
+ATS SCORE SIMULATION
+═══════════════════════════════════════
+ATS Match Score: [X/100]
+Keywords present (green) / missing (red) / weak (yellow): [lists]
+Top 3 ATS fixes: 1. [add keyword here] 2. [...] 3. [...]
+Note: fix before applying.
+
+═══════════════════════════════════════
+SENIORITY CALIBRATION
+═══════════════════════════════════════
+Seniority signal: Staff / Senior / Mid
+Lines reading too junior: "[exact line]" → upgrade to "[stronger Staff-level version]"
+Lines already Staff-level (keep): "[exact line]"
+Assessment: "[1 sentence]"
+
+═══════════════════════════════════════
+RESUME LANGUAGE UPGRADE
+═══════════════════════════════════════
+For every weak line:
+Original: "[exact line]"  ·  Problem: [too junior / vague / no numbers / wrong keywords]
+Upgraded: "[stronger Staff-level version with a real number where the resume supports it — never invent a number]"
+Why stronger: "[1 sentence]"
+
+═══════════════════════════════════════
+TRANSFERABLE SKILLS / BRIDGE PHRASES
+═══════════════════════════════════════
+For each (up to 3):
+Resume says: "[my language]"  ·  JD says: "[their language]"  ·  Bridge phrase to use out loud: "[exact phrase]"
+
+═══════════════════════════════════════
+CONSISTENCY CHECK
+═══════════════════════════════════════
+Dates / Numbers / Ownership / Technology: consistent or issues found.
+Inconsistencies: [list]  ·  How to resolve: "[exact fix]"
+
+═══════════════════════════════════════
+INTERVIEW BLIND SPOT DETECTION
+═══════════════════════════════════════
+For each (top 3):
+What they see on the resume: "[detail]"
+What the interviewer will quietly wonder: "[the hidden concern — same idea as the assistant prompt's Hidden Concern step]"
+How I address it naturally (before they ask): "[woven into an answer, never announced]"
+
+═══════════════════════════════════════
+CAREER NARRATIVE + THROUGH-LINE
+═══════════════════════════════════════
+Narrative strength: Strong / Needs Work / Unclear
+Story the resume currently tells: "[1–2 sentences]"
+Story it SHOULD tell for this role: "[1–2 stronger sentences]"
+MY THROUGH-LINE (the ONE impression every interviewer should independently describe in debrief — this feeds the assistant prompt's through-line field): "[one specific sentence, e.g. 'the engineer who builds AI systems people can actually trust at scale']"
+Opening narrative line for "Tell me about yourself": "[exact first sentence — warm, human, lands on the through-line]"
+
+═══════════════════════════════════════
+FINAL OUTPUT — PASTE BLOCK FOR THE ASSISTANT PROMPT
+═══════════════════════════════════════
+Output this clean block, field names matching the assistant prompt exactly:
+
+---
+Key Skills Detected:
+1. [skill] 2. [skill] 3. [skill] 4. [skill] 5. [skill]
+
+Key Projects Detected:
+1. [project — 1 line] 2. [project — 1 line] 3. [project — 1 line]
+
+JD Focus Areas Detected:
+1. [focus area — 1 line] 2. [focus area — 1 line] 3. [focus area — 1 line]
+
+My Differentiation: [what makes me specifically better than the typical Staff AI/ML candidate for this role — 1–2 sentences]
+
+My Through-Line: [the one debrief impression]
+---
+
+STRENGTHEN BEFORE INTERVIEW:
+□ [gap/upgrade 1] □ [gap/upgrade 2] □ [gap/upgrade 3]
+
+EMPHASIZE IN EVERY ANSWER:
+→ [signal 1] → [signal 2] → [signal 3]
+
+BLIND SPOTS TO PREPARE FOR:
+→ [blind spot 1 — how to address] → [blind spot 2 — how to address]
+
+BRIDGE PHRASES TO USE:
+→ "[phrase 1]" → "[phrase 2]"
+
+OPENING NARRATIVE LINE:
+"[exact first sentence for Tell Me About Yourself]"
+
+OVERALL READINESS: Ready / Needs X fixes / Has critical gaps — "[1 honest sentence]"

@@ -1,5 +1,8 @@
 using System;
+using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Automation;
 using Microsoft.Web.WebView2.Core;
@@ -289,38 +292,410 @@ public abstract class WebChatAutomationBase
             }
         }
     }
+    const alerts = document.querySelectorAll('[role=""alert""], [class*=""toast""]');
+    for (const el of alerts) {
+        const msg = (el.textContent || '').toLowerCase();
+        if (msg.includes('clipboard') || msg.includes(""couldn't copy"")) {
+            const close = el.querySelector('button');
+            if (close) close.click();
+        }
+    }
 })()");
     }
 
     /// <summary>
     /// Waits until the AI has finished streaming its response.
-    /// First polls for the stop-button to appear (generation started),
-    /// then polls for it to disappear (generation finished).
     /// </summary>
     public async Task WaitForGenerationCompleteAsync(IProgress<string>? progress = null)
     {
-        // ── Phase 1: wait for generation to START (up to 8 s) ────────────────
-        for (int i = 0; i < 16; i++)
+        await WaitForLastResponseTextAsync(progress, baseline: null);
+    }
+
+    protected virtual string AssistantMessageCountJs => @"
+(function() {
+    const a = document.querySelectorAll('[data-message-author-role=""assistant""]');
+    if (a.length) return a.length;
+    const b = document.querySelectorAll('[data-testid=""assistant-message""]');
+    if (b.length) return b.length;
+    return document.querySelectorAll('.font-claude-message').length;
+})()";
+
+    protected virtual string LastAssistantTextLengthJs => @"
+(function() {
+    const t = (function() {
+        const msgs = document.querySelectorAll('[data-message-author-role=""assistant""]');
+        const last = msgs[msgs.length - 1];
+        if (!last) return '';
+        const block = last.querySelector('[class*=""markdown""]')
+            || last.querySelector('.prose')
+            || last.querySelector('.markdown')
+            || last;
+        return (block.innerText || block.textContent || '').trim();
+    })();
+    return t.length;
+})()";
+
+    private async Task<bool> IsGeneratingAsync()
+    {
+        string? r = await RunJsAsync($"({IsGeneratingJs}) ? 'YES' : 'NO'");
+        return r == "YES";
+    }
+
+    private async Task<int> GetAssistantMessageCountAsync()
+    {
+        string? raw = await RunJsAsync($"(function(){{ return ({AssistantMessageCountJs}); }})()");
+        return int.TryParse(raw, out int n) ? n : 0;
+    }
+
+    private async Task<int> GetLastAssistantTextLengthAsync()
+    {
+        string? raw = await RunJsAsync($"(function(){{ return ({LastAssistantTextLengthJs}); }})()");
+        return int.TryParse(raw, out int n) ? n : 0;
+    }
+
+    public readonly record struct ResponseWaitBaseline(
+        int AssistantCount,
+        int LastTextLength,
+        string LastExtractedSnapshot = "");
+
+    protected virtual string ScrollLastAssistantIntoViewJs => @"
+(function() {
+    let msgs = document.querySelectorAll('[data-message-author-role=""assistant""]');
+    if (!msgs.length) msgs = document.querySelectorAll('[data-testid=""assistant-message""]');
+    if (!msgs.length) msgs = document.querySelectorAll('.font-claude-message');
+    const last = msgs[msgs.length - 1];
+    if (!last) return false;
+    last.scrollIntoView({ block: 'end', behavior: 'instant' });
+    return true;
+})()";
+
+    private async Task<bool> IsLikelyNewAssistantReplyAsync(ResponseWaitBaseline baseline)
+    {
+        if (await GetAssistantMessageCountAsync() > baseline.AssistantCount)
+            return true;
+        if (await GetLastAssistantTextLengthAsync() > baseline.LastTextLength + 32)
+            return true;
+        return false;
+    }
+
+    private static bool LooksLikeIngestionPayload(string text)
+    {
+        string t = text.Trim();
+        return t.Contains("```json", StringComparison.OrdinalIgnoreCase)
+            || (t.StartsWith('{') && t.Contains('}'));
+    }
+
+    private static bool IsSubstantiallyNewResponse(string? text, ResponseWaitBaseline baseline)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        string trimmed = text.Trim();
+        string snap = baseline.LastExtractedSnapshot.Trim();
+
+        if (!string.IsNullOrEmpty(snap) && trimmed == snap)
+            return false;
+
+        if (string.IsNullOrEmpty(snap) && LooksLikeIngestionPayload(trimmed))
+            return true;
+
+        if (!string.IsNullOrEmpty(snap) && trimmed.Length > snap.Length + 24)
+            return true;
+
+        if (LooksLikeIngestionPayload(trimmed) && !LooksLikeIngestionPayload(snap))
+            return true;
+
+        return trimmed.Length > baseline.LastTextLength + 32;
+    }
+
+    // ─── Finish flag ──────────────────────────────────────────────────────────
+
+    /// <summary>URL fragments of the streaming POST that carries the model's reply.</summary>
+    protected virtual string[] StreamUrlIncludes => [];
+
+    /// <summary>URL fragments of POSTs to ignore (title generation, prepare, feedback…).</summary>
+    protected virtual string[] StreamUrlExcludes => [];
+
+    /// <summary>
+    /// DOM finish flag: true once the last assistant turn shows its action bar
+    /// (Copy / Good response / Regenerate). Climbing stops before reaching a container
+    /// that holds more than one message, so earlier turns can't trigger it.
+    /// </summary>
+    protected virtual string ResponseCompleteJs => @"
+(function() {
+    let msgs = document.querySelectorAll('[data-message-author-role=""assistant""]');
+    if (!msgs.length) msgs = document.querySelectorAll('[data-testid=""assistant-message""]');
+    if (!msgs.length) msgs = document.querySelectorAll('.font-claude-message');
+    const last = msgs[msgs.length - 1];
+    if (!last) return false;
+    let el = last;
+    for (let i = 0; i < 6 && el; i++) {
+        const multi = el.querySelectorAll('[data-message-author-role], .font-claude-message').length;
+        if (multi > 1) break;
+        const btns = el.querySelectorAll('button');
+        for (const b of btns) {
+            const l = ((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('data-testid') || '')).toLowerCase();
+            if (/copy|good response|bad response|regenerate|retry|read aloud/.test(l)) return true;
+        }
+        el = el.parentElement;
+    }
+    return false;
+})()";
+
+    private async Task<bool> IsDomResponseCompleteAsync(ResponseWaitBaseline b)
+    {
+        if (await GetAssistantMessageCountAsync() <= b.AssistantCount)
+            return false;
+
+        string? r = await RunJsAsync($"({ResponseCompleteJs}) ? 'YES' : 'NO'");
+        return r == "YES";
+    }
+
+    private async Task<GenerationFinishWatcher?> TryStartFinishWatcherAsync()
+    {
+        try { return await GenerationFinishWatcher.StartAsync(Core, StreamUrlIncludes, StreamUrlExcludes); }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Waits for the reply to finish, then returns its text. Completion is decided by a
+    /// finish flag, not by guessing from text stability:
+    /// <list type="number">
+    /// <item>network flag — the streaming POST completed (<see cref="GenerationFinishWatcher"/>)</item>
+    /// <item>DOM flag — last assistant turn shows its action bar and the stop button is gone</item>
+    /// <item>content flag (last resort) — new JSON payload unchanged for several polls</item>
+    /// </list>
+    /// </summary>
+    internal async Task<string?> WaitForLastResponseTextAsync(
+        IProgress<string>? progress,
+        ResponseWaitBaseline? baseline,
+        GenerationFinishWatcher? watcher = null,
+        CancellationToken ct = default)
+    {
+        ResponseWaitBaseline b = baseline
+            ?? new ResponseWaitBaseline(
+                await GetAssistantMessageCountAsync(),
+                await GetLastAssistantTextLengthAsync());
+
+        const int pollMs = 400;
+        const int maxWaitMs = 600_000;
+        var sw = Stopwatch.StartNew();
+        long lastReportMs = -5_000;
+        string flag = "";
+
+        string? contentPrev = null;
+        int contentStable = 0;
+
+        progress?.Report($"[{ServiceName}] Waiting for reply…");
+
+        while (sw.ElapsedMilliseconds < maxWaitMs)
         {
-            await Task.Delay(500);
-            string? started = await RunJsAsync($"({IsGeneratingJs}) ? 'YES' : 'NO'");
-            if (started == "YES") break;
+            ct.ThrowIfCancellationRequested();
+            bool streamSeen = watcher?.StreamStarted == true;
+
+            // Flag 1 — network: streaming POST finished.
+            if (streamSeen && watcher!.IsFinished(TimeSpan.FromMilliseconds(1200)))
+            {
+                flag = "network";
+                break;
+            }
+
+            bool generating = await IsGeneratingAsync();
+
+            // Flag 2 — DOM: action bar present on the new assistant turn.
+            if (!generating && await IsDomResponseCompleteAsync(b))
+            {
+                flag = "dom";
+                break;
+            }
+
+            // Flag 3 — content (only when the network flag is unavailable).
+            if (!streamSeen && !generating && sw.ElapsedMilliseconds > 10_000)
+            {
+                string? text = await ReadLastResponseTextAsync(b.AssistantCount, b.LastExtractedSnapshot);
+                if (!string.IsNullOrWhiteSpace(text) &&
+                    LooksLikeIngestionPayload(text))
+                {
+                    if (text == contentPrev) contentStable++;
+                    else { contentStable = 0; contentPrev = text; }
+
+                    if (contentStable >= 4)
+                    {
+                        flag = "content";
+                        break;
+                    }
+                }
+            }
+
+            if (sw.ElapsedMilliseconds - lastReportMs >= 5_000)
+            {
+                lastReportMs = sw.ElapsedMilliseconds;
+                string state = streamSeen ? "streaming" : generating ? "generating" : "waiting";
+                progress?.Report($"[{ServiceName}] {state}… ({sw.ElapsedMilliseconds / 1000}s)");
+            }
+
+            await Task.Delay(pollMs, ct);
         }
 
-        // ── Phase 2: wait for generation to END (up to 3 min) ────────────────
-        int elapsed = 0;
-        const int maxMs = 180_000;
-        while (elapsed < maxMs)
+        progress?.Report(string.IsNullOrEmpty(flag)
+            ? $"[{ServiceName}] Timed out waiting for finish flag — reading page…"
+            : $"[{ServiceName}] Finished ({flag} flag) — reading response…");
+
+        // Let the stop button disappear and the DOM commit the final text.
+        for (int i = 0; i < 25; i++)
         {
-            await Task.Delay(1_000);
-            elapsed += 1_000;
-
-            string? still = await RunJsAsync($"({IsGeneratingJs}) ? 'YES' : 'NO'");
-            if (still != "YES") return;   // done!
-
-            if (elapsed % 5_000 == 0)
-                progress?.Report($"[{ServiceName}] Generating… ({elapsed / 1000}s)");
+            if (!await IsGeneratingAsync()) break;
+            await Task.Delay(300, ct);
         }
+
+        // Read-back phase. Hard-bounded (≤ 45 s) and reports every attempt, so it can never
+        // look frozen. The stale snapshot is skipped inside ReadLastResponseTextAsync.
+        string? best = null;
+        string? previous = null;
+        var readSw = Stopwatch.StartNew();
+        for (int i = 0; i < 40 && readSw.Elapsed < TimeSpan.FromSeconds(45); i++)
+        {
+            await Task.Delay(i == 0 ? 300 : 600, ct);
+
+            string? text = await ReadLastResponseTextAsync(b.AssistantCount, b.LastExtractedSnapshot);
+            progress?.Report(
+                $"[{ServiceName}] Reading response… attempt {i + 1} " +
+                (text is null ? "(nothing new yet)" : $"({text.Length} chars)"));
+
+            if (text is null)
+                continue;
+
+            best = text;
+            if (text == previous)
+                return text;       // two identical fresh reads in a row → final
+
+            previous = text;
+        }
+
+        // Out of time: a fresh-but-unconfirmed read is still better than nothing.
+        return best;
+    }
+
+    /// <summary>Compact selector/DOM stats appended to the error when no text can be read.</summary>
+    private async Task<string> DescribeDomStateAsync()
+    {
+        string? diag = await RunJsAsync(PageJsonScanScripts.DomDiagnostics);
+        return string.IsNullOrWhiteSpace(diag) ? "no diagnostics" : diag;
+    }
+
+    /// <summary>Reads assistant text for the reply at/after <paramref name="assistantIndexHint"/>.</summary>
+    protected virtual Task<string?> ExtractLastResponseTextAsync(int assistantIndexHint) =>
+        GetLastResponseTextAsync();
+
+    /// <summary>Per-strategy outcome of the most recent read (shown in errors for diagnosis).</summary>
+    private string _readTrace = "";
+
+    /// <summary>
+    /// Reads the newest reply. Tries each strategy in turn and SKIPS any result that is the
+    /// pre-send reply (<paramref name="staleSnapshot"/>) — so a selector that keeps returning
+    /// the previous message can no longer block the page-text scanner behind it.
+    /// </summary>
+    private async Task<string?> ReadLastResponseTextAsync(
+        int assistantIndexHint = 0,
+        string? staleSnapshot = null)
+    {
+        await RunJsAsync($"(function(){{ return ({ScrollLastAssistantIntoViewJs}); }})()");
+
+        var trace = new StringBuilder();
+
+        string? Pick(string name, string? t)
+        {
+            if (t?.StartsWith("JS_ERROR:", StringComparison.Ordinal) == true)
+            {
+                trace.Append(name).Append("=js-error ");
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(t))
+            {
+                trace.Append(name).Append("=empty ");
+                return null;
+            }
+
+            t = t.Trim();
+            if (IsStale(t, staleSnapshot))
+            {
+                trace.Append(name).Append("=stale ");
+                return null;
+            }
+
+            trace.Append(name).Append("=ok(").Append(t.Length).Append(") ");
+            return t;
+        }
+
+        // `??` is lazy: later strategies only run when earlier ones gave nothing fresh.
+        string? result =
+            Pick("container", await ExtractLastResponseTextAsync(assistantIndexHint))
+            ?? Pick("lastMsg", await GetLastResponseTextAsync())
+            ?? Pick("html", HtmlOrNull(await GetLastResponseHtmlAsync()))
+            ?? Pick("pageJson", await RunJsAsync(PageJsonScanScripts.LastJsonObject))
+            ?? Pick("pageJsonLoose", await RunJsAsync(PageJsonScanScripts.LastJsonObjectLoose));
+
+        _readTrace = trace.ToString().Trim();
+        return result;
+    }
+
+    private static string? HtmlOrNull(string? html) =>
+        string.IsNullOrWhiteSpace(html) || html.StartsWith("JS_ERROR:", StringComparison.Ordinal)
+            ? html
+            : HtmlToPlainText(html);
+
+    // ─── Staleness (is this still the previous reply?) ───────────────────────
+
+    private static bool IsStale(string text, string? snapshot) =>
+        !string.IsNullOrWhiteSpace(snapshot) && Fingerprint(text) == Fingerprint(snapshot);
+
+    /// <summary>
+    /// Comparable identity of a reply: its last balanced <c>{ "…" }</c> object if it has one,
+    /// otherwise the trimmed text. Lets "whole message" text and "JSON only" text of the same
+    /// reply compare equal.
+    /// </summary>
+    private static string Fingerprint(string text) => (LastBalancedObject(text) ?? text).Trim();
+
+    private static string? LastBalancedObject(string text)
+    {
+        var starts = new List<int>();
+        foreach (Match m in Regex.Matches(text, @"\{\s*"""))
+            starts.Add(m.Index);
+
+        for (int s = starts.Count - 1, tried = 0; s >= 0 && tried < 80; s--, tried++)
+        {
+            int depth = 0;
+            bool inStr = false, esc = false;
+            for (int i = starts[s]; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (inStr)
+                {
+                    if (esc) esc = false;
+                    else if (c == '\\') esc = true;
+                    else if (c == '"') inStr = false;
+                    continue;
+                }
+
+                if (c == '"') inStr = true;
+                else if (c == '{') depth++;
+                else if (c == '}' && --depth == 0)
+                    return text[starts[s]..(i + 1)];
+            }
+        }
+
+        return null;
+    }
+
+    private static string HtmlToPlainText(string html)
+    {
+        string s = Regex.Replace(html, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
+        s = Regex.Replace(s, @"</p\s*>", "\n", RegexOptions.IgnoreCase);
+        s = Regex.Replace(s, @"<[^>]+>", " ");
+        s = Regex.Replace(s, @"\s+\n", "\n");
+        s = Regex.Replace(s, @"[ \t]{2,}", " ");
+        return s.Trim();
     }
 
     /// <summary>
@@ -329,6 +704,71 @@ public abstract class WebChatAutomationBase
     /// </summary>
     public Task<string?> GetLastResponseHtmlAsync() =>
         RunJsAsync($"(function(){{ return ({LastResponseHtmlJs}); }})()");
+
+    /// <summary>Plain text of the last assistant message (for JSON ingestion).</summary>
+    public virtual Task<string?> GetLastResponseTextAsync() =>
+        RunJsAsync($"(function(){{ return ({LastResponseTextJs}); }})()");
+
+    protected virtual string LastResponseTextJs => @"
+(function() {
+    function pickText(el) {
+        if (!el) return '';
+        return (el.innerText || el.textContent || '').trim();
+    }
+    let msgs = document.querySelectorAll('[data-message-author-role=""assistant""]');
+    if (!msgs.length) msgs = document.querySelectorAll('[data-testid=""assistant-message""]');
+    if (!msgs.length) {
+        const claude = document.querySelectorAll('.font-claude-message');
+        if (claude.length) return pickText(claude[claude.length - 1]) || null;
+    }
+    const last = msgs[msgs.length - 1];
+    if (!last) return null;
+    const block = last.querySelector('[class*=""markdown""]')
+        || last.querySelector('.prose')
+        || last.querySelector('.markdown')
+        || last.querySelector('[class*=""message""]')
+        || last;
+    const t = pickText(block);
+    return t.length ? t : null;
+})()";
+
+    /// <summary>Sends a prompt, waits for the model to finish, returns response text.</summary>
+    public async Task<string> SendPromptAndWaitForResponseAsync(
+        string text,
+        IProgress<string>? progress = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "Empty prompt — nothing sent.";
+
+        if (!IsOnTargetSite())
+            return $"Not on {ServiceName}. Navigate there first.";
+
+        int assistantCount = await GetAssistantMessageCountAsync();
+        // Snapshot through the SAME pipeline used after the finish flag, so the
+        // "is this the old reply?" comparison is apples-to-apples.
+        string? snapshot = await ReadLastResponseTextAsync(Math.Max(0, assistantCount - 1));
+        var baseline = new ResponseWaitBaseline(
+            assistantCount,
+            await GetLastAssistantTextLengthAsync(),
+            snapshot ?? "");
+
+        // Start listening for the stream BEFORE sending so the request can't be missed.
+        using GenerationFinishWatcher? watcher = await TryStartFinishWatcherAsync();
+
+        string sendResult = await SendPromptAsync(text);
+        if (!sendResult.EndsWith("Sent.", StringComparison.Ordinal))
+            return sendResult;
+
+        string? body = await WaitForLastResponseTextAsync(progress, baseline, watcher, ct);
+        if (!string.IsNullOrWhiteSpace(body))
+            return body;
+
+        string diag = await DescribeDomStateAsync();
+        return $"[{ServiceName}] Response finished but no new message text was found. " +
+               $"(read: {_readTrace}; dom: {diag}; " +
+               $"stream: {(watcher?.StreamStarted == true ? watcher.LastUrl : "not seen")})";
+    }
 
     /// <summary>Injects text and clicks Send (no file).</summary>
     public async Task<string> SendPromptAsync(string text)
@@ -404,9 +844,26 @@ public abstract class WebChatAutomationBase
         {
             string raw = await Core.ExecuteScriptAsync(script);
             if (string.IsNullOrEmpty(raw) || raw is "null" or "undefined") return null;
-            return raw.StartsWith('"') ? JsonSerializer.Deserialize<string>(raw) : raw;
+            if (raw[0] != '"')
+                return raw;
+
+            try
+            {
+                return JsonSerializer.Deserialize<string>(raw);
+            }
+            catch (JsonException)
+            {
+                return UnescapeJsonStringLiteral(raw);
+            }
         }
         catch (Exception ex) { return $"JS_ERROR:{ex.Message}"; }
+    }
+
+    private static string UnescapeJsonStringLiteral(string raw)
+    {
+        if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
+            raw = raw[1..^1];
+        return Regex.Unescape(raw);
     }
 
     protected static string JsString(string s) => JsonSerializer.Serialize(s);

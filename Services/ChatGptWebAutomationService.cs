@@ -36,20 +36,90 @@ public sealed class ChatGptWebAutomationService : WebChatAutomationBase
         || document.querySelector('button[aria-label*=""send""]')
         || document.querySelector('button[type=""submit""]')";
 
-    // True while ChatGPT is still streaming (the stop button is present).
+    // Network finish flag: the SSE POST that streams the reply (POST /backend-api/[f/]conversation).
+    protected override string[] StreamUrlIncludes =>
+        ["/backend-api/conversation", "/backend-api/f/conversation"];
+
+    protected override string[] StreamUrlExcludes =>
+        ["/prepare", "/init", "gen_title", "/implicit", "/feedback", "/stream_status",
+         "/textdocs", "/attach", "/interpreter", "/delete", "/generate_autocompletions"];
+
+    // True while ChatGPT is still streaming (avoid generic ""Stop"" — matches unrelated buttons).
     protected override string IsGeneratingJs =>
-        @"!!(document.querySelector('[data-testid=""stop-button""]')
-            || document.querySelector('button[aria-label=""Stop streaming""]'))";
+        @"!!(document.querySelector('[data-testid=""stop-button""]:not([disabled])')
+            || document.querySelector('button[aria-label=""Stop streaming""]:not([disabled])')
+            || document.querySelector('button[aria-label=""Stop generating""]:not([disabled])'))";
+
+    protected override string AssistantMessageCountJs =>
+        WrapExtractionScript("countAssistantContainers()");
+
+    protected override string LastAssistantTextLengthJs =>
+        WrapExtractionScript("(function(){ const t = extractAssistantText(Math.max(0, countAssistantContainers() - 1)); return t ? t.length : 0; })()");
+
+    protected override Task<string?> ExtractLastResponseTextAsync(int assistantIndexHint) =>
+        RunJsAsync(WrapExtractionScript($"extractAssistantText({assistantIndexHint})"));
+
+    private static string WrapExtractionScript(string returnExpression) =>
+        "(function() {" + ChatGptResponseExtractionScripts.ExtractAssistantText +
+        " return " + returnExpression + "; })()";
+
+    protected override string LastResponseTextJs => @"
+(function() {
+    function pickText(el) {
+        if (!el) return '';
+        return (el.innerText || el.textContent || '').trim();
+    }
+    let msgs = document.querySelectorAll('[data-message-author-role=""assistant""]');
+    if (!msgs.length) {
+        const turns = document.querySelectorAll('[data-testid=""conversation-turn""]');
+        const assistantTurns = Array.from(turns).filter(t =>
+            t.querySelector('[data-message-author-role=""assistant""]')
+            || t.getAttribute('data-turn') === 'assistant');
+        if (assistantTurns.length) {
+            const turn = assistantTurns[assistantTurns.length - 1];
+            const inner = turn.querySelector('[data-message-author-role=""assistant""]') || turn;
+            const block = inner.querySelector('[class*=""markdown""]')
+                || inner.querySelector('.prose')
+                || inner;
+            const t = pickText(block);
+            if (t.length) return t;
+        }
+    }
+    const last = msgs[msgs.length - 1];
+    if (!last) return null;
+    const block = last.querySelector('[class*=""markdown""]')
+        || last.querySelector('.prose')
+        || last.querySelector('.markdown')
+        || last;
+    const t = pickText(block);
+    return t.length ? t : null;
+})()";
 
     // innerHTML of the last assistant message's rendered markdown block.
     protected override string LastResponseHtmlJs => @"
 (function() {
-    const msgs = document.querySelectorAll('[data-message-author-role=""assistant""]');
-    const last  = msgs[msgs.length - 1];
-    if (!last) return null;
-    return (last.querySelector('.prose')
-         || last.querySelector('.markdown')
-         || last).innerHTML;
+    function pickHtml(el) {
+        if (!el) return null;
+        const block = el.querySelector('[class*=""markdown""]')
+            || el.querySelector('.prose')
+            || el.querySelector('.markdown')
+            || el;
+        return block.innerHTML || null;
+    }
+    let msgs = document.querySelectorAll('[data-message-author-role=""assistant""]');
+    if (!msgs.length) {
+        const turns = document.querySelectorAll('[data-testid=""conversation-turn""]');
+        const assistantTurns = Array.from(turns).filter(t =>
+            t.querySelector('[data-message-author-role=""assistant""]')
+            || t.getAttribute('data-turn') === 'assistant');
+        if (assistantTurns.length) {
+            const turn = assistantTurns[assistantTurns.length - 1];
+            const inner = turn.querySelector('[data-message-author-role=""assistant""]') || turn;
+            return pickHtml(inner);
+        }
+    }
+    const last = msgs[msgs.length - 1];
+    return pickHtml(last);
 })()";
 
     // Attachment confirmation: ChatGPT shows a preview chip with a remove button

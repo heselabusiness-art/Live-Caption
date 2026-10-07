@@ -247,6 +247,13 @@
             <Setter Property="Margin"      Value="0,0,0,8"/>
         </Style>
 
+        <Style x:Key="PiHint" TargetType="TextBlock">
+            <Setter Property="Foreground"  Value="#7A7A7A"/>
+            <Setter Property="FontSize"    Value="10"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin"      Value="0,0,0,8"/>
+        </Style>
+
         <!-- Interview-round radio button pill style -->
         <Style x:Key="RoundPill" TargetType="RadioButton">
             <Setter Property="Foreground" Value="#9A9A9A"/>
@@ -916,13 +923,93 @@
                                       HorizontalScrollBarVisibility="Disabled">
                             <StackPanel Margin="12,10,12,16">
 
-                                <!-- ══ GROUP: Context Loaded (lines 9-17) ══════════════ -->
+                                <!-- ══ Ingestion pipeline ══════════════════════════════ -->
                                 <Border Background="#1C2333" CornerRadius="4"
                                         Padding="10,8,10,10" Margin="0,0,0,10">
                                     <StackPanel>
-                                        <TextBlock Text="Context Loaded"
+                                        <TextBlock Text="Ingestion Pipeline"
                                                    Style="{StaticResource PiGroupHeader}"/>
-                                        <!-- Seniority · Domain -->
+                                        <TextBlock Style="{StaticResource PiHint}"
+                                                   Text="Fill “Your inputs” below, tick the steps you want, then press Start. Steps run one after another and report progress here; you confirm each result before it is applied. Steps missing their inputs are skipped."/>
+
+                                        <ProgressBar x:Name="PiIngestOverallProgress"
+                                                     Height="4"
+                                                     Minimum="0" Maximum="1" Value="0"
+                                                     Margin="0,0,0,10"
+                                                     BorderThickness="0"
+                                                     Foreground="#569CD6"
+                                                     Background="#2A3142"/>
+
+                                        <!-- Progress stepper (rows are data-bound; not buttons) -->
+                                        <ItemsControl x:Name="PiIngestSteps"
+                                                      Margin="0,0,0,6"
+                                                      Focusable="False">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,0,0,8">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="22"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <CheckBox Grid.Column="0"
+                                                                  IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                                  IsEnabled="{Binding CanEdit}"
+                                                                  VerticalAlignment="Top"
+                                                                  Margin="0,3,8,0"
+                                                                  ToolTip="Include this step in the run"/>
+                                                        <TextBlock Grid.Column="1"
+                                                                   Text="{Binding Glyph}"
+                                                                   Foreground="{Binding GlyphBrush}"
+                                                                   FontSize="13"
+                                                                   VerticalAlignment="Top"
+                                                                   Margin="0,1,0,0"/>
+                                                        <StackPanel Grid.Column="2">
+                                                            <TextBlock Text="{Binding Title}"
+                                                                       Foreground="#D4D4D4"
+                                                                       FontSize="12"
+                                                                       FontWeight="SemiBold"/>
+                                                            <TextBlock Text="{Binding Detail}"
+                                                                       Foreground="{Binding DetailBrush}"
+                                                                       FontSize="11"
+                                                                       TextWrapping="Wrap"/>
+                                                            <ProgressBar IsIndeterminate="True"
+                                                                         Height="2"
+                                                                         Margin="0,4,0,0"
+                                                                         BorderThickness="0"
+                                                                         Foreground="#DCDCAA"
+                                                                         Background="#2A3142"
+                                                                         Visibility="{Binding RunningVisibility}"/>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <Button x:Name="PiIngestStartButton"
+                                                Content="▶  Start ingestion"
+                                                Height="32"
+                                                Margin="0,0,0,8"
+                                                Click="PiIngestStartButton_Click"/>
+
+                                        <TextBlock x:Name="PiIngestStatusLabel"
+                                                   Text=""
+                                                   Foreground="#9A9A9A"
+                                                   FontSize="11"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- ══ Your inputs (manual — before ingest) ════════════ -->
+                                <Border Background="#1C2333" CornerRadius="4"
+                                        Padding="10,8,10,10" Margin="0,0,0,10"
+                                        BorderBrush="#2D4A3E" BorderThickness="1">
+                                    <StackPanel>
+                                        <TextBlock Text="Your inputs"
+                                                   Style="{StaticResource PiGroupHeader}"/>
+                                        <TextBlock Style="{StaticResource PiHint}"
+                                                   Text="Resume + JD drive steps 2–4. Company + role context drive step 1. You can run any step when its minimum fields are filled."/>
+
                                         <Grid Margin="0,0,0,8">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -930,7 +1017,55 @@
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Grid.Column="0">
-                                                <TextBlock Text="SENIORITY" Style="{StaticResource PiLabel}"/>
+                                                <TextBlock Style="{StaticResource PiLabel}">
+                                                    <Run Text="RESUME SUMMARY"/>
+                                                    <Run Text="  · required for 2–4" Foreground="#6A8F7A" FontWeight="Normal"/>
+                                                </TextBlock>
+                                                <TextBox x:Name="PiResumeSummary"
+                                                         Style="{StaticResource DarkInput}"
+                                                         Tag="Paste resume bullets — used for JD analysis, project, and system design ingests"
+                                                         Height="110"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Style="{StaticResource PiLabel}">
+                                                    <Run Text="JOB DESCRIPTION"/>
+                                                    <Run Text="  · required for 2–4 · recommended for 1" Foreground="#6A8F7A" FontWeight="Normal"/>
+                                                </TextBlock>
+                                                <TextBox x:Name="PiJobDescription"
+                                                         Style="{StaticResource DarkInput}"
+                                                         Tag="Paste JD — shared across ingests"
+                                                         Height="110"/>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Style="{StaticResource PiLabel}">
+                                                    <Run Text="COMPANY"/>
+                                                    <Run Text="  · required for 1" Foreground="#6A8F7A" FontWeight="Normal"/>
+                                                </TextBlock>
+                                                <TextBox x:Name="PiCompany"
+                                                         Style="{StaticResource DarkInput}"
+                                                         Tag="Company name"
+                                                         Height="32"
+                                                         AcceptsReturn="False"
+                                                         TextWrapping="NoWrap"
+                                                         VerticalScrollBarVisibility="Hidden"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Style="{StaticResource PiLabel}">
+                                                    <Run Text="SENIORITY"/>
+                                                    <Run Text="  · for 1" Foreground="#6A8F7A" FontWeight="Normal"/>
+                                                </TextBlock>
                                                 <TextBox x:Name="PiSeniority"
                                                          Style="{StaticResource DarkInput}"
                                                          Text="Staff"
@@ -940,8 +1075,11 @@
                                                          TextWrapping="NoWrap"
                                                          VerticalScrollBarVisibility="Hidden"/>
                                             </StackPanel>
-                                            <StackPanel Grid.Column="2">
-                                                <TextBlock Text="DOMAIN" Style="{StaticResource PiLabel}"/>
+                                            <StackPanel Grid.Column="4">
+                                                <TextBlock Style="{StaticResource PiLabel}">
+                                                    <Run Text="DOMAIN"/>
+                                                    <Run Text="  · for 1" Foreground="#6A8F7A" FontWeight="Normal"/>
+                                                </TextBlock>
                                                 <TextBox x:Name="PiDomain"
                                                          Style="{StaticResource DarkInput}"
                                                          Text="AI/ML"
@@ -951,121 +1089,40 @@
                                                          TextWrapping="NoWrap"
                                                          VerticalScrollBarVisibility="Hidden"/>
                                             </StackPanel>
-                                        </Grid>
-                                        <!-- Company · Company Stage -->
-                                        <Grid Margin="0,0,0,8">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="8"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
-                                                <TextBlock Text="Company" Style="{StaticResource PiLabel}"/>
-                                                <TextBox x:Name="PiCompany"
-                                                         Style="{StaticResource DarkInput}"
-                                                         Tag="name"
-                                                         Height="32"
-                                                         AcceptsReturn="False"
-                                                         TextWrapping="NoWrap"
-                                                         VerticalScrollBarVisibility="Hidden"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="2">
+                                            <StackPanel Grid.Column="6">
                                                 <TextBlock Text="COMPANY STAGE" Style="{StaticResource PiLabel}"/>
                                                 <TextBox x:Name="PiCompanyStage"
                                                          Style="{StaticResource DarkInput}"
-                                                         Tag="Startup / Growth / Enterprise / Big Tech / AI-first"
+                                                         Tag="Filled by ingest or type manually"
                                                          Height="32"
                                                          AcceptsReturn="False"
                                                          TextWrapping="NoWrap"
                                                          VerticalScrollBarVisibility="Hidden"/>
                                             </StackPanel>
                                         </Grid>
-                                        <!-- My Differentiation -->
-                                        <TextBlock Text="My Differentiation" Style="{StaticResource PiLabel}"/>
-                                        <TextBox x:Name="PiMyDifferentiation"
+
+                                        <TextBlock Style="{StaticResource PiLabel}">
+                                            <Run Text="INTERVIEWER BACKGROUND"/>
+                                            <Run Text="  · optional for 1" Foreground="#6A8F7A" FontWeight="Normal"/>
+                                        </TextBlock>
+                                        <TextBox x:Name="PiInterviewerBackground"
                                                  Style="{StaticResource DarkInput}"
-                                                 Tag="What makes me specifically better than that typical profile"
-                                                 Height="60"
-                                                 Margin="0,0,0,8"/>
-                                        <!-- My Through-Line -->
-                                        <TextBlock Text="My Through-Line" Style="{StaticResource PiLabel}"/>
-                                        <TextBox x:Name="PiMyThroughLine"
-                                                 Style="{StaticResource DarkInput}"
-                                                 Tag="The ONE impression every interviewer should describe in debrief — paste the SAME one into every round"
-                                                 Height="50"/>
+                                                 Tag="LinkedIn / calendar names — optional for company research"
+                                                 Height="32"
+                                                 AcceptsReturn="False"
+                                                 TextWrapping="NoWrap"
+                                                 VerticalScrollBarVisibility="Hidden"/>
                                     </StackPanel>
                                 </Border>
 
-                                <!-- ══ GROUP: Detected Analysis (lines 13-15) ══════════ -->
+                                <!-- ══ Step 1 output — Company Research ════════════════ -->
                                 <Border Background="#1C2333" CornerRadius="4"
                                         Padding="10,8,10,10" Margin="0,0,0,10">
                                     <StackPanel>
-                                        <TextBlock Text="Detected Analysis"
-                                                   Style="{StaticResource PiGroupHeader}"/>
-                                        <TextBlock Text="Key Skills Detected" Style="{StaticResource PiLabel}"/>
-                                        <TextBox x:Name="PiKeySkillsDetected"
-                                                 Style="{StaticResource DarkInput}"
-                                                 Tag="top 5 from resume"
-                                                 Height="50"
-                                                 Margin="0,0,0,8"/>
-                                        <TextBlock Text="Key Projects Detected" Style="{StaticResource PiLabel}"/>
-                                        <TextBox x:Name="PiKeyProjectsDetected"
-                                                 Style="{StaticResource DarkInput}"
-                                                 Tag="project names"
-                                                 Height="50"
-                                                 Margin="0,0,0,8"/>
-                                        <TextBlock Text="JD Focus Areas Detected" Style="{StaticResource PiLabel}"/>
-                                        <TextBox x:Name="PiJdFocusAreasDetected"
-                                                 Style="{StaticResource DarkInput}"
-                                                 Tag="top 3 requirements"
-                                                 Height="50"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- ══ GROUP: Basis & Status (lines 28-29) ═══════════ -->
-                                <Border Background="#1C2333" CornerRadius="4"
-                                        Padding="10,8,10,10" Margin="0,0,0,10">
-                                    <StackPanel>
-                                        <TextBlock Text="Basis &amp; Status"
-                                                   Style="{StaticResource PiGroupHeader}"/>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="2*"/>
-                                                <ColumnDefinition Width="8"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
-                                                <TextBlock Text="USED FOR" Style="{StaticResource PiLabel}"/>
-                                                <TextBox x:Name="PiUsedFor"
-                                                         Style="{StaticResource DarkInput}"
-                                                         Tag="company name"
-                                                         Height="32"
-                                                         AcceptsReturn="False"
-                                                         TextWrapping="NoWrap"
-                                                         VerticalScrollBarVisibility="Hidden"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="2">
-                                                <TextBlock Text="OUTCOME" Style="{StaticResource PiLabel}"/>
-                                                <TextBox x:Name="PiOutcome"
-                                                         Style="{StaticResource DarkInput}"
-                                                         Text="pending"
-                                                         Tag="pending / got offer / rejected"
-                                                         Height="32"
-                                                         AcceptsReturn="False"
-                                                         TextWrapping="NoWrap"
-                                                         VerticalScrollBarVisibility="Hidden"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </StackPanel>
-                                </Border>
-
-                                <!-- ══ GROUP: Company Context (lines 36-49) ══════════ -->
-                                <Border Background="#1C2333" CornerRadius="4"
-                                        Padding="10,8,10,10" Margin="0,0,0,10">
-                                    <StackPanel>
-                                        <TextBlock Text="Company Context"
-                                                   Style="{StaticResource PiGroupHeader}"/>
-                                        <!-- Product · Team Focus -->
+                                        <TextBlock Style="{StaticResource PiGroupHeader}">
+                                            <Run Text="After step 1 — Company context"/>
+                                            <Run Text="  (ingest or edit)" Foreground="#7A7A7A" FontWeight="Normal"/>
+                                        </TextBlock>
                                         <Grid Margin="0,0,0,8">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -1105,15 +1162,6 @@
                                                  Tag="from careers page or Glassdoor"
                                                  Height="50"
                                                  Margin="0,0,0,8"/>
-                                        <TextBlock Text="Interviewer Background" Style="{StaticResource PiLabel}"/>
-                                        <TextBox x:Name="PiInterviewerBackground"
-                                                 Style="{StaticResource DarkInput}"
-                                                 Tag="from LinkedIn if known"
-                                                 Height="32"
-                                                 AcceptsReturn="False"
-                                                 TextWrapping="NoWrap"
-                                                 VerticalScrollBarVisibility="Hidden"
-                                                 Margin="0,0,0,8"/>
                                         <TextBlock Text="Recent News" Style="{StaticResource PiLabel}"/>
                                         <TextBox x:Name="PiRecentNews"
                                                  Style="{StaticResource DarkInput}"
@@ -1123,40 +1171,107 @@
                                         <TextBlock Text="Typical Candidate Profile" Style="{StaticResource PiLabel}"/>
                                         <TextBox x:Name="PiTypicalCandidateProfile"
                                                  Style="{StaticResource DarkInput}"
-                                                 Tag="What a typical Staff AI/ML candidate looks like for this role"
+                                                 Tag="What a typical hire looks like for this role"
                                                  Height="60"/>
                                     </StackPanel>
                                 </Border>
 
-                                <!-- ══ GROUP: My Profiles Info (resume, JD, stories, scenarios) ══ -->
+                                <!-- ══ Step 2 output — JD Analysis ═════════════════════ -->
                                 <Border Background="#1C2333" CornerRadius="4"
                                         Padding="10,8,10,10" Margin="0,0,0,10">
                                     <StackPanel>
-                                        <TextBlock Text="My Profiles Info"
-                                                   Style="{StaticResource PiGroupHeader}"/>
-                                        <TextBlock Text="RESUME SUMMARY" Style="{StaticResource PiLabel}"/>
-                                        <TextBox x:Name="PiResumeSummary"
+                                        <TextBlock Style="{StaticResource PiGroupHeader}">
+                                            <Run Text="After step 2 — JD analysis"/>
+                                            <Run Text="  (ingest or edit)" Foreground="#7A7A7A" FontWeight="Normal"/>
+                                        </TextBlock>
+                                        <TextBlock Text="Key Skills Detected" Style="{StaticResource PiLabel}"/>
+                                        <TextBox x:Name="PiKeySkillsDetected"
                                                  Style="{StaticResource DarkInput}"
-                                                 Tag="Paste your resume bullets here"
-                                                 Height="100"
+                                                 Tag="top 5 from resume"
+                                                 Height="50"
                                                  Margin="0,0,0,8"/>
-                                        <TextBlock Text="JOB DESCRIPTION" Style="{StaticResource PiLabel}"/>
-                                        <TextBox x:Name="PiJobDescription"
+                                        <TextBlock Text="Key Projects Detected" Style="{StaticResource PiLabel}"/>
+                                        <TextBox x:Name="PiKeyProjectsDetected"
                                                  Style="{StaticResource DarkInput}"
-                                                 Tag="Paste key JD requirements here"
-                                                 Height="120"
+                                                 Tag="project names"
+                                                 Height="50"
                                                  Margin="0,0,0,8"/>
+                                        <TextBlock Text="JD Focus Areas Detected" Style="{StaticResource PiLabel}"/>
+                                        <TextBox x:Name="PiJdFocusAreasDetected"
+                                                 Style="{StaticResource DarkInput}"
+                                                 Tag="top 3 requirements"
+                                                 Height="50"
+                                                 Margin="0,0,0,8"/>
+                                        <TextBlock Text="My Differentiation" Style="{StaticResource PiLabel}"/>
+                                        <TextBox x:Name="PiMyDifferentiation"
+                                                 Style="{StaticResource DarkInput}"
+                                                 Tag="What makes you better than the typical profile"
+                                                 Height="60"
+                                                 Margin="0,0,0,8"/>
+                                        <TextBlock Text="My Through-Line" Style="{StaticResource PiLabel}"/>
+                                        <TextBox x:Name="PiMyThroughLine"
+                                                 Style="{StaticResource DarkInput}"
+                                                 Tag="One debrief line — same for every round"
+                                                 Height="50"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- ══ Steps 3–4 output — Stories & scenarios ════════════ -->
+                                <Border Background="#1C2333" CornerRadius="4"
+                                        Padding="10,8,10,10" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource PiGroupHeader}">
+                                            <Run Text="After steps 3–4 — Stories &amp; scenarios"/>
+                                            <Run Text="  (one per ingest; click again to append)" Foreground="#7A7A7A" FontWeight="Normal"/>
+                                        </TextBlock>
                                         <TextBlock Text="PROJECT STORIES" Style="{StaticResource PiLabel}"/>
                                         <TextBox x:Name="PiProjectStories"
                                                  Style="{StaticResource DarkInput}"
-                                                 Tag="Paste 2–3 project stories here"
+                                                 Tag="Step 3 adds one story — run again for a second"
                                                  Height="120"
                                                  Margin="0,0,0,8"/>
                                         <TextBlock Text="SYSTEM DESIGN SCENARIOS" Style="{StaticResource PiLabel}"/>
                                         <TextBox x:Name="PiSystemDesignScenarios"
                                                  Style="{StaticResource DarkInput}"
-                                                 Tag="Paste 1–3 system design scenarios here"
+                                                 Tag="Step 4 adds one scenario — run again for a second"
                                                  Height="120"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- ══ Tracking ════════════════════════════════════════ -->
+                                <Border Background="#1C2333" CornerRadius="4"
+                                        Padding="10,8,10,10" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="Basis &amp; status"
+                                                   Style="{StaticResource PiGroupHeader}"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="USED FOR" Style="{StaticResource PiLabel}"/>
+                                                <TextBox x:Name="PiUsedFor"
+                                                         Style="{StaticResource DarkInput}"
+                                                         Tag="company name"
+                                                         Height="32"
+                                                         AcceptsReturn="False"
+                                                         TextWrapping="NoWrap"
+                                                         VerticalScrollBarVisibility="Hidden"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="OUTCOME" Style="{StaticResource PiLabel}"/>
+                                                <TextBox x:Name="PiOutcome"
+                                                         Style="{StaticResource DarkInput}"
+                                                         Text="pending"
+                                                         Tag="pending / got offer / rejected"
+                                                         Height="32"
+                                                         AcceptsReturn="False"
+                                                         TextWrapping="NoWrap"
+                                                         VerticalScrollBarVisibility="Hidden"/>
+                                            </StackPanel>
+                                        </Grid>
                                     </StackPanel>
                                 </Border>
 

@@ -36,10 +36,24 @@ public sealed class ClaudeWebAutomationService : WebChatAutomationBase
         || document.querySelector('button[data-testid=""send-button""]')
         || document.querySelector('button[type=""submit""]')";
 
+    // Network finish flag: POST .../chat_conversations/{id}/completion (SSE).
+    protected override string[] StreamUrlIncludes => ["/completion"];
+
     // True while Claude is still streaming.
     protected override string IsGeneratingJs =>
         @"!!(document.querySelector('button[aria-label=""Stop""]')
-            || document.querySelector('[data-testid=""stop-button""]'))";
+            || document.querySelector('[data-testid=""stop-button""]')
+            || document.querySelector('button[aria-label*=""Stop""]'))";
+
+    protected override string LastResponseTextJs => @"
+(function() {
+    const msgs = document.querySelectorAll('.font-claude-message');
+    const last = msgs[msgs.length - 1];
+    if (!last) return null;
+    const block = last.querySelector('.prose') || last.querySelector('[class*=""markdown""]') || last;
+    const t = (block.innerText || block.textContent || '').trim();
+    return t.length ? t : null;
+})()";
 
     // innerHTML of the last Claude response block.
     protected override string LastResponseHtmlJs => @"

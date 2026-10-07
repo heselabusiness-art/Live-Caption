@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Input;
@@ -195,6 +196,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        InitIngestionSteps();
 
         _captureService.CaptionUpdated += OnCaptionUpdated;
         _captureService.StatusChanged += OnStatusChanged;
@@ -599,6 +601,18 @@ public partial class MainWindow : Window
         Browser.Focus();
     }
 
+    /// <summary>Focus WebView2 so ChatGPT/Claude accept automated send/read (no clipboard).</summary>
+    private async Task FocusEmbeddedBrowserForAutomationAsync()
+    {
+        await Dispatcher.InvokeAsync(() =>
+        {
+            Activate();
+            Browser.Focus();
+            Keyboard.Focus(Browser);
+        });
+        await Task.Delay(120);
+    }
+
     private void UpdateNavButtons()
     {
         if (_browser is null || !_browser.IsInitialized)
@@ -902,6 +916,290 @@ public partial class MainWindow : Window
     {
         // Reserved for future use: adapt prompts or UI based on the selected round.
         // The selected round name is: (sender as RadioButton)?.Content?.ToString()
+    }
+
+    // ── Pre-interview ingestion ───────────────────────────────────────────────
+
+    private PreInterviewFormContext ReadPreInterviewFormContext() => new()
+    {
+        Seniority = PiSeniority?.Text?.Trim() ?? "",
+        Domain = PiDomain?.Text?.Trim() ?? "",
+        Company = PiCompany?.Text?.Trim() ?? "",
+        CompanyStage = PiCompanyStage?.Text?.Trim() ?? "",
+        ResumeSummary = PiResumeSummary?.Text?.Trim() ?? "",
+        JobDescription = PiJobDescription?.Text?.Trim() ?? "",
+        InterviewerBackground = PiInterviewerBackground?.Text?.Trim() ?? ""
+    };
+
+    // ── Progress-stepper ingestion ────────────────────────────────────────────
+
+    private readonly System.Collections.ObjectModel.ObservableCollection<IngestionStepItem> _ingestSteps = new();
+    private CancellationTokenSource? _ingestCts;
+
+    private void InitIngestionSteps()
+    {
+        PreInterviewIngestionStep[] order =
+        [
+            PreInterviewIngestionStep.CompanyResearch,
+            PreInterviewIngestionStep.JdAnalysis,
+            PreInterviewIngestionStep.ProjectGeneration,
+            PreInterviewIngestionStep.SystemDesignGeneration
+        ];
+
+        for (int i = 0; i < order.Length; i++)
+            _ingestSteps.Add(new IngestionStepItem(i + 1, order[i]));
+
+        PiIngestSteps.ItemsSource = _ingestSteps;
+    }
+
+    private void SetIngestStatus(string message, System.Windows.Media.Brush brush)
+    {
+        PiIngestStatusLabel.Foreground = brush;
+        PiIngestStatusLabel.Text = message;
+    }
+
+    /// <summary>Start runs the ticked steps in order; while running the same button becomes Stop.</summary>
+    private async void PiIngestStartButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_ingestCts is not null)
+        {
+            _ingestCts.Cancel();
+            PiIngestStartButton.IsEnabled = false;
+            PiIngestStartButton.Content = "Stopping…";
+            return;
+        }
+
+        await RunIngestionSequenceAsync();
+    }
+
+    private async Task RunIngestionSequenceAsync()
+    {
+        if (_isSending)
+        {
+            SetIngestStatus("Another send is already in progress.", System.Windows.Media.Brushes.OrangeRed);
+            return;
+        }
+
+        WebChatAutomationBase? service = GetActiveWebChatService();
+        if (service is null)
+        {
+            SetIngestStatus("Open ChatGPT or Claude in the embedded browser first.",
+                System.Windows.Media.Brushes.OrangeRed);
+            return;
+        }
+
+        List<IngestionStepItem> selected = _ingestSteps.Where(s => s.IsSelected).ToList();
+        if (selected.Count == 0)
+        {
+            SetIngestStatus("Tick at least one step.", System.Windows.Media.Brushes.OrangeRed);
+            return;
+        }
+
+        PreInterviewFormContext ctx = ReadPreInterviewFormContext();
+
+        // Reset the stepper, then skip ticked steps whose inputs are missing.
+        foreach (IngestionStepItem s in _ingestSteps)
+            s.Reset();
+
+        var runnable = new List<IngestionStepItem>();
+        foreach (IngestionStepItem s in selected)
+        {
+            string? missing = PreInterviewIngestionPipeline.GetMissingInputs(s.Step, ctx);
+            if (missing is not null)
+                s.SetState(IngestionStepState.Skipped, $"Skipped — fill {missing} first.");
+            else
+                runnable.Add(s);
+        }
+
+        foreach (IngestionStepItem s in _ingestSteps.Where(s => !s.IsSelected))
+            s.SetState(IngestionStepState.Skipped, "Not selected.");
+
+        if (runnable.Count == 0)
+        {
+            SetIngestStatus("Nothing to run — fill the required inputs above.",
+                System.Windows.Media.Brushes.OrangeRed);
+            return;
+        }
+
+        _isSending = true;
+        _ingestCts = new CancellationTokenSource();
+        CancellationToken ct = _ingestCts.Token;
+
+        PiIngestStartButton.Content = "■  Stop";
+        foreach (IngestionStepItem s in _ingestSteps)
+            s.CanEdit = false;
+
+        PiIngestOverallProgress.Maximum = runnable.Count;
+        PiIngestOverallProgress.Value = 0;
+
+        int applied = 0, failed = 0;
+        bool halted = false;
+
+        try
+        {
+            for (int i = 0; i < runnable.Count; i++)
+            {
+                IngestionStepItem item = runnable[i];
+                ct.ThrowIfCancellationRequested();
+
+                SetIngestStatus(
+                    $"Step {i + 1} of {runnable.Count}: {PreInterviewIngestionPipeline.GetStepDisplayName(item.Step)}",
+                    System.Windows.Media.Brushes.Goldenrod);
+                SetSendStatus($"Ingestion: {PreInterviewIngestionPipeline.GetStepDisplayName(item.Step)}…",
+                    isError: false);
+
+                try
+                {
+                    item.SetState(IngestionStepState.Running, $"Sending prompt to {service.ServiceName}…");
+
+                    string prompt = PreInterviewIngestionPipeline.BuildPrompt(item.Step, ctx);
+                    var progress = new Progress<string>(msg =>
+                        item.SetState(IngestionStepState.Running, StripServicePrefix(msg, service.ServiceName)));
+
+                    await FocusEmbeddedBrowserForAutomationAsync();
+
+                    string responseOrError =
+                        await service.SendPromptAndWaitForResponseAsync(prompt, progress, ct);
+
+                    // Send/wait problems come back as "[Service] …" — chat is unusable, stop the run.
+                    if (responseOrError.StartsWith('[') && responseOrError.Contains("]"))
+                    {
+                        item.SetState(IngestionStepState.Failed, responseOrError);
+                        failed++;
+                        halted = true;
+                        break;
+                    }
+
+                    PreInterviewIngestionResult parsed =
+                        PreInterviewIngestionPipeline.ParseResponse(item.Step, responseOrError);
+
+                    item.SetState(IngestionStepState.Running, "Waiting for your confirmation…");
+
+                    string preview = PreInterviewIngestionPipeline.FormatVerificationPreview(parsed);
+                    string stepName = PreInterviewIngestionPipeline.GetStepDisplayName(item.Step);
+                    MessageBoxResult verify = await Dispatcher.InvokeAsync(() =>
+                        MessageBox.Show(
+                            preview,
+                            $"{stepName} — verify ingestion",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Question));
+
+                    if (verify == MessageBoxResult.Yes)
+                    {
+                        ApplyPreInterviewIngestion(parsed);
+                        applied++;
+                        item.SetState(IngestionStepState.Done, "Applied to the form.");
+                    }
+                    else
+                    {
+                        item.SetState(IngestionStepState.Skipped, "Declined — no fields changed.");
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    item.SetState(IngestionStepState.Cancelled, "Stopped.");
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // Bad/invalid reply for this step — report it and carry on with the next one.
+                    item.SetState(IngestionStepState.Failed, ex.Message);
+                    failed++;
+                }
+
+                PiIngestOverallProgress.Value = i + 1;
+            }
+
+            string summary = $"Done — {applied} applied" + (failed > 0 ? $", {failed} failed" : "") + ".";
+            if (halted)
+                summary = $"Halted — {applied} applied, {failed} failed. Remaining steps were not run.";
+
+            SetIngestStatus(summary,
+                failed == 0 ? System.Windows.Media.Brushes.LimeGreen : System.Windows.Media.Brushes.OrangeRed);
+            SetSendStatus(summary, isError: failed > 0);
+        }
+        catch (OperationCanceledException)
+        {
+            SetIngestStatus($"Stopped — {applied} applied.", System.Windows.Media.Brushes.LightGray);
+        }
+        finally
+        {
+            foreach (IngestionStepItem s in _ingestSteps)
+            {
+                if (s.State == IngestionStepState.Pending && s.IsSelected)
+                    s.SetState(IngestionStepState.Skipped, "Not run.");
+                s.CanEdit = true;
+            }
+
+            _ingestCts?.Dispose();
+            _ingestCts = null;
+            _isSending = false;
+            PiIngestStartButton.Content = "▶  Start ingestion";
+            PiIngestStartButton.IsEnabled = true;
+        }
+    }
+
+    private static string StripServicePrefix(string message, string serviceName)
+    {
+        string prefix = $"[{serviceName}] ";
+        return message.StartsWith(prefix, StringComparison.Ordinal) ? message[prefix.Length..] : message;
+    }
+
+    private void ApplyPreInterviewIngestion(PreInterviewIngestionResult result)
+    {
+        static string V(Dictionary<string, string> f, string key) =>
+            f.TryGetValue(key, out string? val) ? val.Trim() : "";
+
+        var f = result.Fields;
+
+        switch (result.Step)
+        {
+            case PreInterviewIngestionStep.CompanyResearch:
+                PiCompanyStage.Text = V(f, "companyStage");
+                PiCompany.Text = V(f, "company");
+                PiProduct.Text = V(f, "product");
+                PiTeamFocus.Text = V(f, "teamFocus");
+                PiKnownTechStack.Text = V(f, "knownTechStack");
+                PiCompanyValues.Text = V(f, "companyValues");
+                PiRecentNews.Text = V(f, "recentNews");
+                PiTypicalCandidateProfile.Text = V(f, "typicalCandidateProfile");
+                if (!string.IsNullOrWhiteSpace(V(f, "myDifferentiation")))
+                    PiMyDifferentiation.Text = V(f, "myDifferentiation");
+                if (!string.IsNullOrWhiteSpace(V(f, "interviewerBackground")))
+                    PiInterviewerBackground.Text = V(f, "interviewerBackground");
+                break;
+
+            case PreInterviewIngestionStep.JdAnalysis:
+                PiKeySkillsDetected.Text = V(f, "keySkillsDetected");
+                PiKeyProjectsDetected.Text = V(f, "keyProjectsDetected");
+                PiJdFocusAreasDetected.Text = V(f, "jdFocusAreasDetected");
+                if (!string.IsNullOrWhiteSpace(V(f, "myDifferentiation")))
+                    PiMyDifferentiation.Text = V(f, "myDifferentiation");
+                if (!string.IsNullOrWhiteSpace(V(f, "myThroughLine")))
+                    PiMyThroughLine.Text = V(f, "myThroughLine");
+                break;
+
+            case PreInterviewIngestionStep.ProjectGeneration:
+            {
+                string story = PreInterviewIngestionPipeline.FormatStoryForFormField(
+                    V(f, "storyTitle"),
+                    V(f, "projectStory"));
+                PiProjectStories.Text = PreInterviewIngestionPipeline.AppendToFormField(
+                    PiProjectStories.Text, story);
+                break;
+            }
+
+            case PreInterviewIngestionStep.SystemDesignGeneration:
+            {
+                string scenario = PreInterviewIngestionPipeline.FormatStoryForFormField(
+                    V(f, "scenarioTitle"),
+                    V(f, "systemDesignScenario"),
+                    titleLabel: "Scenario");
+                PiSystemDesignScenarios.Text = PreInterviewIngestionPipeline.AppendToFormField(
+                    PiSystemDesignScenarios.Text, scenario);
+                break;
+            }
+        }
     }
 
     // ── Pre-interview Send ────────────────────────────────────────────────────
@@ -1356,6 +1654,7 @@ public partial class MainWindow : Window
         ApplyCapturedSegmentToUi(segment);
         return Task.CompletedTask;
     }
+    /// <summary>
     /// Resets the tracker read-head, wipes the segment boxes, and updates status.
     /// </summary>
     private Task ClearSegmentAsync()

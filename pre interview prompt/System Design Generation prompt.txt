@@ -1,0 +1,150 @@
+You are an expert system design story writer for Staff-level AI/ML engineers.
+Read my resume and JD below and generate fully written, fully expanded system design scenarios ready to paste into the SYSTEM DESIGN SCENARIOS field of my interview assistant prompt.
+
+These are detailed, hands-on system design narratives written from the perspective of the engineer who actually designed and built the system — deep source material so the assistant can answer any technical or system design question accurately, at whatever depth the moment calls for.
+
+CRITICAL — these feed an assistant that delivers SHORT spoken answers live and clarifies scope first in system design rounds. So write each scenario RICH and COMPLETE here, in natural spoken English, each sentence on its own line, never a bullet — the voice the assistant speaks in. The assistant compresses this live and pulls real numbers from it.
+
+═══════════════════════════════════════
+MY RESUME
+═══════════════════════════════════════
+[attached]
+
+═══════════════════════════════════════
+JOB DESCRIPTION
+═══════════════════════════════════════
+[Paste the JD here]
+
+═══════════════════════════════════════
+REFERENCE SCENARIO — MATCH THIS DEPTH
+═══════════════════════════════════════
+Match the depth, length, and hands-on voice below. Nothing thinner.
+
+---
+System: Enterprise Agentic LLM Platform — Healthcare SaaS, Clinical Documentation Review
+
+What the System Does
+This was an enterprise agentic LLM platform that autonomously handled clinical documentation review for an insurance claims workflow.
+Reviewers were previously logging into three or four EHR systems by hand — reading notes, cross-referencing codes, deciding whether a claim had sufficient documentation.
+The system replaced that with specialized agents that ingested data across systems, reconciled inconsistencies, flagged gaps, and delivered a structured validated summary — or resolved straightforward checks end-to-end.
+It processed tens of thousands of agent requests per day across the client's full claims operation.
+
+The Architecture I Designed
+I designed a multi-agent architecture on LangGraph running on Vertex AI and Kubernetes.
+At the entry point I built a routing layer that classified each request by document type and dispatched it to the right specialized sub-agent.
+Each sub-agent was prompted and tuned for its document type rather than one general-purpose agent handling everything.
+Between every stage I placed evaluation checkpoints — structured validators that caught low-confidence outputs before they propagated.
+High-stakes or ambiguous cases escalated automatically to a human reviewer.
+The async queue-driven layer on Kubernetes absorbed concurrency spikes without blocking.
+On top I built a full LLMOps governance stack — drift detection, evaluation pipelines, prompt versioning, audit trails.
+
+The Key Components and Why
+Routing Layer — LangGraph: I needed to classify requests and dispatch to the right agent; a single general-purpose agent couldn't handle the variation in format and completeness; LangGraph gave me clean multi-step orchestration with explicit state between stages.
+Specialized Sub-Agents: each owned one document type, so each could be prompted and evaluated for its domain — physician-note agents for narrative, diagnostic-code agents for ICD cross-referencing, prior-auth agents for form validation.
+Evaluation Checkpoints: a structured validator between stages checked output against a schema — completeness, confidence, consistency — and on failure either retried with modified context or escalated to a human, catching errors before they reached a reviewer.
+Async Queue-Driven Infrastructure: tens of thousands of requests/day with multi-step inference would bottleneck synchronously, so each request went into a managed queue, workers pulled from it, results returned async — absorbing spikes without degrading.
+LLMOps Governance Stack: every action logged with a full audit trail; prompts versioned and regression-tested against a behavioral suite; drift detection on output distributions over time, because clinical language evolves and a model good at launch can silently degrade.
+
+The Tradeoffs I Made
+Multi-agent vs single general-purpose agent: I chose multi-agent. The single agent was faster to build but collapsed on edge cases — free-form notes, codes varying across systems, patients under different identifiers. Multi-agent added routing complexity and per-agent prompt work, but gave reliable handling across all document types — non-negotiable in a regulated environment.
+Async queue-driven vs synchronous: I chose async. Synchronous was simpler to debug, but at this volume it would bottleneck under any spike. Async added operational complexity — queue monitoring, worker pool sizing, dead-letter handling — but gave the concurrency capacity to scale without losing reliability.
+Human-in-the-loop vs full autonomy: I chose a hybrid — autonomous for straightforward cases, mandatory escalation for high-stakes ones. Full autonomy maximized throughput but risked a wrongful denial; full human review defeated the purpose. The hybrid put reviewer judgment exactly where it mattered.
+
+How I Handled Scale and Reliability
+The platform handled tens of thousands of requests/day, each multi-step across multiple EHR sources.
+I scaled concurrent execution capacity 42% by tuning Kubernetes worker pool sizing and queue throughput.
+I learned to load test at 3x expected peak, not 1.5x — because the first real spike sent queue depth somewhere I hadn't anticipated, and I had to tune the worker pool twice before it stabilized.
+On reliability: an incorrect action carries real consequences, so I built behavioral evaluation frameworks that tested consistency without labeled ground truth for every case.
+Behavioral consistency improved 31%. Incorrect autonomous actions dropped 29%. Production model incidents dropped 33% after the governance stack shipped.
+
+Failure Handling
+If an agent produced a low-confidence output, it didn't pass downstream — the checkpoint caught it and either retried or escalated.
+If the routing layer failed, the request went to a fallback general-purpose agent with a conservative prompt rather than erroring.
+Every failure path had a defined fallback — no silent failures, no dropped requests, no bad outputs reaching reviewers unchecked.
+
+The Business Impact
+Agent task completion accuracy improved 38%. Manual review requirements dropped 37%.
+Customer-facing agent benchmark performance improved 27% through prompt optimization.
+Model evaluation failures across the org dropped 34%.
+And the LLMOps governance standards I built became the baseline the broader org adopted.
+---
+
+This is the standard. Match this depth and voice.
+
+═══════════════════════════════════════
+YOUR TASK
+═══════════════════════════════════════
+Read my resume fully. Read the JD fully. Identify the top 3 systems from my resume most relevant to this JD. Write each as a fully expanded scenario in the structure below.
+
+═══════════════════════════════════════
+HANDS-ON RULE (overrides everything)
+═══════════════════════════════════════
+Every scenario sounds like something I personally designed, built, and owned — not theory, not how this kind of system generally works. Be the NARRATOR of my own system, never the EXPLAINER of an architecture pattern. Test on every sentence: could someone NOT on this project have written it? If yes, rewrite it to what I designed, decided, and saw.
+
+Each section must contain at least one: "I designed…", "I built…", "I chose X over Y because…", "I made the call to…", "I saw in production that…", "I learned that…", "I had to adjust X when…", "the decision that scared me was…", "what I found was…".
+
+NEVER appears: "one common approach is", "teams typically", "the industry standard is", "it's generally recommended", "a good practice would be", "many engineers choose to", "this is a well-known pattern", any textbook/whitepaper sentence, any sentence where I'm not the decision-maker, any passive "it was decided / the team agreed." TEXTBOOK FLAG: if a section reads like a clean taxonomy of general best practices with no specific system and no number, it fails — re-anchor to what I built and the metric it moved.
+
+═══════════════════════════════════════
+VOICE RULE
+═══════════════════════════════════════
+Natural spoken English — a confident engineer at a whiteboard. Contractions encouraged. Casual connectors welcome. Let the thinking show. Each sentence on its own line. No sentence over ~20 words. Short sentence after a long one for rhythm. No bullets, no written transitions ("Furthermore", "Additionally", "In conclusion").
+
+═══════════════════════════════════════
+SCENARIO STRUCTURE (all 7 sections, full depth)
+═══════════════════════════════════════
+1 — WHAT THE SYSTEM DOES: what it did, who the users were, their workflow, the problem, the scale. Start with the system and users, not my title. 3–5 sentences.
+2 — THE ARCHITECTURE I DESIGNED: the overall architecture, main layers/stages, how requests flow, the infra. Walk it like a whiteboard, in order, first person. 4–6 sentences.
+3 — KEY COMPONENTS AND WHY: 3–5 components, each its own paragraph (3–5 sentences) — what it does, why I chose it over the alternative, the specific problem it solves here, what I'd have used instead and why I rejected it.
+4 — TRADEOFFS I MADE: 2–4 decisions, each its own paragraph (4–6 sentences) — what I chose, what I rejected, why, the cost of my choice, what scared me, whether I'd choose it again. Never "it depends" without saying what it depends on.
+5 — SCALE AND RELIABILITY: how I designed for scale, the numbers, what surprised me at production scale, what I adjusted, how I designed for reliability, what I caught that I didn't expect. 4–6 sentences with numbers and a lesson learned the hard way.
+6 — FAILURE HANDLING: what happens when each major component fails, the fallback paths, how it degrades gracefully, the recovery mechanism. 3–5 sentences. Every failure path has a defined fallback. No silent failures.
+7 — BUSINESS IMPACT: what changed, what metrics moved, what the org adopted, the new baseline. 3–5 sentences, a number in nearly every sentence.
+
+═══════════════════════════════════════
+INTERVIEW ANSWER LAYER (per scenario — feeds the assistant's engines)
+═══════════════════════════════════════
+THE OPENING LINE — 1 sentence: the most vivid opener — what the system did or the problem it solved, not my role.
+THE KEY DECISION — 3 sentences: the most important architectural call — chosen, rejected, what scared me. Natural spoken English.
+THE MEMORABLE LINE — 1 sentence: the quotable debrief sentence, from a real moment or decision, ideally with a number — never a generic principle.
+CLARIFYING QUESTIONS I'D ASK — written as natural spoken sentences (not a numbered list), the way I'd say them out loud. (These feed the assistant's system-design clarify-first behavior: scale, latency, autonomy, risk, constraints.)
+CORE-ANSWER VERSION — the 6–8 sentence spoken walkthrough the assistant delivers live: core idea → key components → the key decision → happy path → failure path → tradeoff. Everything else is held for follow-ups.
+BEST USED FOR: "most complex system you've built" → lead with [what]; "how did you handle scale" → focus on [section]; "architectural decision you're most proud of" → lead with [tradeoff]; "how did you handle failure" → focus on [section]; "what would you do differently" → focus on [what].
+FOLLOW-UP DEPTH — 3–4 sentences going deeper on the hardest architectural challenge, first person, hands-on, no theory. (Feeds the Follow-Up Chain Engine.)
+
+═══════════════════════════════════════
+QUALITY CHECK (before output)
+═══════════════════════════════════════
+✓ Opens on system/users, not my title  ✓ architecture walks like a whiteboard  ✓ every component explains why chosen over the alternative  ✓ every tradeoff names chosen AND rejected AND what scared me  ✓ scale section has numbers + a surprise  ✓ every failure path has a fallback  ✓ impact has 3+ metrics  ✓ every section has a hands-on construction  ✓ contractions present, no bullets, no sentence over ~20 words  ✓ no sentence a non-participant could've written  ✓ no section that fails the TEXTBOOK FLAG  ✓ matches reference depth.
+
+═══════════════════════════════════════
+OUTPUT FORMAT — REPEAT FOR ALL 3
+═══════════════════════════════════════
+---
+SYSTEM: [name]
+JD MATCH: [which JD requirement this addresses]
+SENIORITY SIGNAL: [what Staff-level behavior it shows]
+
+[Full scenario — all 7 sections — reference depth, spoken voice, contractions, one sentence per line]
+
+---
+INTERVIEW ANSWER LAYER:
+THE OPENING LINE: [1 sentence]
+THE KEY DECISION: [3 sentences]
+THE MEMORABLE LINE: [1 sentence]
+CLARIFYING QUESTIONS I'D ASK: [spoken sentences]
+CORE-ANSWER VERSION: [6–8 sentences]
+BEST USED FOR: [question → section mapping]
+FOLLOW-UP DEPTH: [3–4 sentences]
+---
+
+═══════════════════════════════════════
+AFTER ALL 3 — SCENARIO MAP
+═══════════════════════════════════════
+"Walk me through the most complex system you've built." → [scenario] — open with [what]
+"How did you handle scale at that level?" → [scenario] — focus on [section]
+"What's the hardest architectural decision you've made?" → [scenario] — lead with [tradeoff]
+"How did you handle failures in production?" → [scenario] — focus on [section]
+"What would you design differently if you built it again?" → [scenario] — focus on [what]
+"How did you ensure reliability in a regulated environment?" → [scenario] — lead with [what]
+"What's the most impactful system you've shipped?" → [scenario] — lead with [impact]
