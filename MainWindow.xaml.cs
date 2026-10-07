@@ -1820,9 +1820,24 @@ public partial class MainWindow : Window
                 SetSendStatus("Reminder.txt not found next to the executable.", isError: true));
             return;
         }
-        string reminder = await File.ReadAllTextAsync(path);
+        string reminder = ExtractFullReminder(await File.ReadAllTextAsync(path));
         if (!string.IsNullOrWhiteSpace(reminder))
             await SendPromptToAiAsync(reminder);
+    }
+
+    /// <summary>
+    /// Reminder.txt is a reference sheet (header + FULL REMINDER + QUICK NUDGES). Only the text
+    /// between the two ═══ lines under "FULL REMINDER" is meant to be sent. If the file has no such
+    /// block (e.g. an older single-text reminder), the whole file is sent unchanged.
+    /// </summary>
+    internal static string ExtractFullReminder(string fileText)
+    {
+        var m = Regex.Match(fileText,
+            @"FULL REMINDER[^\r\n]*\r?\n[\u2550=]{5,}[ \t]*\r?\n(.*?)\r?\n[\u2550=]{5,}",
+            RegexOptions.Singleline);
+        if (m.Success && !string.IsNullOrWhiteSpace(m.Groups[1].Value))
+            return m.Groups[1].Value.Trim();
+        return fileText;
     }
 
     /// <summary>Returns the round name matching the currently selected radio button.</summary>
