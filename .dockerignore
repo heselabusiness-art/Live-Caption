@@ -1,12 +1,15 @@
 .git
 .gitignore
+.github
 .vs
 .idea
-bin/
-obj/
+**/bin/
+**/obj/
 **/*.user
 **/*.suo
 WebView2Data/
 **/*.WebView2/
-chrome-extension/native-host/obj/
-chrome-extension/native-host/bin/
+# Not part of the app image: unit tests, the Chrome extension (and its native host), docs.
+tests/
+chrome-extension/
+/README.md

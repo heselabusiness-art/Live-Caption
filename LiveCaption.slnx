@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/chrome-extension/" />
+  <Folder Name="/chrome-extension/native-host/">
+    <Project Path="chrome-extension/native-host/LiveCaptionNativeHost.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LiveCaptionViewer.Tests/LiveCaptionViewer.Tests.csproj" />
+  </Folder>
+  <Project Path="LiveCaptionViewer.csproj" />
+</Solution>

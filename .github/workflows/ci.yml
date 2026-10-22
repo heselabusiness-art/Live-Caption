@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore LiveCaption.slnx
+
+      - name: Build (WPF app, native host, tests)
+        run: dotnet build LiveCaption.slnx --configuration Release --no-restore
+
+      - name: Unit tests
+        run: dotnet test tests/LiveCaptionViewer.Tests --configuration Release --no-build --logger "trx;LogFileName=test-results.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: tests/LiveCaptionViewer.Tests/TestResults/*.trx
+          if-no-files-found: ignore
+
+  extension-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Syntax-check the Chrome extension scripts
+        run: |
+          for f in chrome-extension/*.js chrome-extension/content/*.js chrome-extension/lib/*.js; do
+            node --check "$f"
+          done
+
+      - name: Extension unit tests
+        run: node --test "chrome-extension/tests/*.test.js"

@@ -6,7 +6,7 @@ echo Rebuilding the Live Captions host and preparing the Chrome sidebar...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0native-host\Install-NativeHost.ps1"
 if errorlevel 1 (
   echo.
-  echo Host install failed. Make sure the .NET 8 SDK is installed, then run this file again.
+  echo Host install failed. Make sure the .NET 10 SDK is installed, then run this file again.
   pause
   exit /b 1
 )

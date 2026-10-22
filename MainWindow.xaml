@@ -558,35 +558,26 @@
                             <!-- Segment sub-header (indicator + label) -->
                             <Border Grid.Row="0"
                                     Style="{StaticResource SectionHeader}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Orientation="Horizontal" Grid.Column="0">
-                                        <Ellipse x:Name="RecordingIndicator"
-                                                 Width="10" Height="10"
-                                                 Fill="Gray"
-                                                 VerticalAlignment="Center"
-                                                 Margin="0,0,8,0"/>
-                                        <TextBlock Text="SEGMENT"
-                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                                                   FontSize="11"
-                                                   FontWeight="SemiBold"
-                                                   VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="RecordingLabel"
-                                                   Text=" — Auto-send OFF — capture only; segment not sent (PageUp toggles)."
-                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                                   FontSize="11"
-                                                   VerticalAlignment="Center"
-                                                   TextTrimming="CharacterEllipsis"/>
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="1"
-                                               Text="PageUp = toggle Auto-send · Home/End capture (send when ON)"
-                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                <DockPanel LastChildFill="True">
+                                    <Ellipse x:Name="RecordingIndicator"
+                                             DockPanel.Dock="Left"
+                                             Width="10" Height="10"
+                                             Fill="Gray"
+                                             VerticalAlignment="Center"
+                                             Margin="0,0,8,0"/>
+                                    <TextBlock Text="SEGMENT"
+                                               DockPanel.Dock="Left"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                                                FontSize="11"
+                                               FontWeight="SemiBold"
                                                VerticalAlignment="Center"/>
-                                </Grid>
+                                    <TextBlock x:Name="RecordingLabel"
+                                               Text=" — Idle."
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               TextWrapping="Wrap"/>
+                                </DockPanel>
                             </Border>
 
                             <ScrollViewer Grid.Row="1"
@@ -620,35 +611,26 @@
                             <!-- ── SEGMENT sub-header (mirror of SEGMENT tab) ── -->
                             <Border Grid.Row="0"
                                     Style="{StaticResource SectionHeader}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Orientation="Horizontal" Grid.Column="0">
-                                        <Ellipse x:Name="TiSegmentIndicator"
-                                                 Width="10" Height="10"
-                                                 Fill="Gray"
-                                                 VerticalAlignment="Center"
-                                                 Margin="0,0,8,0"/>
-                                        <TextBlock Text="SEGMENT"
-                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                                                   FontSize="11"
-                                                   FontWeight="SemiBold"
-                                                   VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="TiSegmentLabel"
-                                                   Text=" — Auto-send OFF — capture only; segment not sent (PageUp toggles)."
-                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                                   FontSize="11"
-                                                   VerticalAlignment="Center"
-                                                   TextTrimming="CharacterEllipsis"/>
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="1"
-                                               Text="PageUp = toggle · Home/End/Delete capture (send when ON) · Insert capture"
-                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                <DockPanel LastChildFill="True">
+                                    <Ellipse x:Name="TiSegmentIndicator"
+                                             DockPanel.Dock="Left"
+                                             Width="10" Height="10"
+                                             Fill="Gray"
+                                             VerticalAlignment="Center"
+                                             Margin="0,0,8,0"/>
+                                    <TextBlock Text="SEGMENT"
+                                               DockPanel.Dock="Left"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                                                FontSize="11"
+                                               FontWeight="SemiBold"
                                                VerticalAlignment="Center"/>
-                                </Grid>
+                                    <TextBlock x:Name="TiSegmentLabel"
+                                               Text=" — Idle."
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               TextWrapping="Wrap"/>
+                                </DockPanel>
                             </Border>
 
                             <!-- ── SEGMENT text (mirror of SEGMENT tab) ── -->
