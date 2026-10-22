@@ -5,7 +5,9 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Automation;
+using LiveCaptionViewer.Infrastructure;
 using Microsoft.Web.WebView2.Core;
+using Serilog;
 
 namespace LiveCaptionViewer.Services;
 
@@ -28,6 +30,21 @@ public abstract class WebChatAutomationBase
     protected virtual int      FileUploadPollMs    => 400;
 
     protected readonly CoreWebView2 Core;
+
+    private static readonly ILogger Log = AppLog.For("WebChat");
+
+    /// <summary>
+    /// When the previous reply is still streaming, wait this long for it to finish before
+    /// pressing Stop. In a live interview the newest question matters more than the tail of
+    /// the previous answer.
+    /// </summary>
+    protected virtual TimeSpan GenerationGrace => TimeSpan.FromSeconds(4);
+
+    /// <summary>Press Stop on a reply that outlasts <see cref="GenerationGrace"/> instead of waiting up to 45 s.</summary>
+    protected virtual bool InterruptGeneration => true;
+
+    /// <summary>After this long without any Send button, fall back to pressing Enter in the composer.</summary>
+    protected virtual int EnterFallbackAfterMs => 2_500;
 
     protected WebChatAutomationBase(CoreWebView2 core)
     {
@@ -54,6 +71,24 @@ public abstract class WebChatAutomationBase
             || document.querySelector('button[aria-label*=""Stop""]')
             || document.querySelector('[aria-label=""Stop streaming""]'))";
 
+    /// <summary>JS expression → the Stop button shown while a reply streams.</summary>
+    protected virtual string StopButtonJs =>
+        @"(document.querySelector('[data-testid=""stop-button""]')
+            || document.querySelector('button[aria-label=""Stop streaming""]')
+            || document.querySelector('button[aria-label=""Stop generating""]')
+            || document.querySelector('button[aria-label=""Stop response""]')
+            || document.querySelector('button[aria-label*=""Stop""]'))";
+
+    // The built-in selectors can be replaced without a rebuild via selectors.json (see
+    // SelectorOverrides). Everything below uses the effective expression.
+    private SelectorOverrides.SelectorSet UserSelectors => SelectorOverrides.Shared.For(ServiceName);
+    private string EffInputJs => Wrap(UserSelectors.Input ?? InputSelectorJs);
+    private string EffSendJs => Wrap(UserSelectors.SendButton ?? SendButtonJs);
+    private string EffGeneratingJs => Wrap(UserSelectors.IsGenerating ?? IsGeneratingJs);
+    private string EffStopJs => Wrap(UserSelectors.StopButton ?? StopButtonJs);
+
+    private static string Wrap(string expression) => "(" + expression + ")";
+
     /// <summary>
     /// JS expression returning the <c>innerHTML</c> of the last AI response
     /// block, or <c>null</c>.  Subclasses override with site-specific selectors.
@@ -73,9 +108,14 @@ public abstract class WebChatAutomationBase
 
     public bool IsOnTargetSite()
     {
-        string src = Core.Source ?? string.Empty;
+        // Compare the real host name: a plain substring test also matches e.g. a search URL
+        // that merely contains "claude.ai" in its query string.
+        if (!Uri.TryCreate(Core.Source, UriKind.Absolute, out Uri? uri))
+            return false;
+
         foreach (string host in TargetHosts)
-            if (src.Contains(host, StringComparison.OrdinalIgnoreCase))
+            if (uri.Host.Equals(host, StringComparison.OrdinalIgnoreCase) ||
+                uri.Host.EndsWith("." + host, StringComparison.OrdinalIgnoreCase))
                 return true;
         return false;
     }
@@ -240,7 +280,7 @@ public abstract class WebChatAutomationBase
     {
         await RunJsAsync($@"
 (function() {{
-    const el = {InputSelectorJs};
+    const el = {EffInputJs};
     if (el) {{ el.focus(); el.click(); }}
 }})()");
     }
@@ -337,7 +377,7 @@ public abstract class WebChatAutomationBase
 
     private async Task<bool> IsGeneratingAsync()
     {
-        string? r = await RunJsAsync($"({IsGeneratingJs}) ? 'YES' : 'NO'");
+        string? r = await RunJsAsync($"({EffGeneratingJs}) ? 'YES' : 'NO'");
         return r == "YES";
     }
 
@@ -779,33 +819,98 @@ public abstract class WebChatAutomationBase
         if (!IsOnTargetSite())
             return $"Not on {ServiceName}. Navigate there first.";
 
-        // While a reply streams, ChatGPT/Claude replace Send with Stop, so a hotkey pressed
-        // right after the previous question would find no Send button. Wait it out.
-        if (!await WaitWhileGeneratingAsync(TimeSpan.FromSeconds(45)))
-            return $"[{ServiceName}] The previous answer is still generating — press again when it finishes.";
+        var sw = Stopwatch.StartNew();
+        Log.Information("[{Service}] Sending prompt ({Chars} chars)", ServiceName, text.Length);
 
         // While a reply streams, ChatGPT/Claude replace Send with Stop, so a hotkey pressed
-        // right after the previous question would find no Send button. Wait it out.
-        if (!await WaitWhileGeneratingAsync(TimeSpan.FromSeconds(45)))
-            return $"[{ServiceName}] The previous answer is still generating — press again when it finishes.";
+        // right after the previous question would find no Send button.
+        string? blocked = await ClearGenerationAsync();
+        if (blocked is not null)
+        {
+            Log.Warning("[{Service}] {Message}", ServiceName, blocked);
+            return blocked;
+        }
 
+        string result = "";
+        for (int attempt = 1; attempt <= 2; attempt++)
+        {
+            result = await SendOnceAsync(text);
+            if (result.EndsWith("Sent.", StringComparison.Ordinal) || !IsRetryable(result))
+                break;
+
+            // The composer was not ready (page still settling, focus lost): once more, fresh.
+            Log.Warning("[{Service}] Attempt {Attempt} failed: {Result}", ServiceName, attempt, result);
+            await Task.Delay(700);
+        }
+
+        Log.Information("[{Service}] Send finished in {Ms} ms: {Result}", ServiceName, sw.ElapsedMilliseconds, result);
+        return result;
+    }
+
+    /// <summary>Only failures that happened BEFORE the text left the composer are safe to repeat.</summary>
+    private static bool IsRetryable(string result) =>
+        result.Contains("Could not put the text", StringComparison.Ordinal) ||
+        result.Contains("Input field not found", StringComparison.Ordinal);
+
+    private async Task<string> SendOnceAsync(string text)
+    {
         string injectResult = await InjectTextAsync(text);
         if (injectResult == "INSERT_FAILED")
             return $"[{ServiceName}] Could not put the text into the chat box ({SizeNote(text)}; {await DescribeSendBlockerAsync()}).";
         if (injectResult != "OK")
             return $"[{ServiceName}] Input field not found ({injectResult}).";
 
-        await Task.Delay(SendDelay);
+        // A short question needs no settling time; a huge prompt gets the full delay.
+        await Task.Delay(text.Length < 2_000 ? TimeSpan.FromMilliseconds(120) : SendDelay);
 
         string clickResult = await ClickSendWhenReadyAsync();
         return clickResult switch
         {
             "SENT"          => $"[{ServiceName}] Sent.",
             "BTN_DISABLED"  => $"[{ServiceName}] Send button stayed disabled for {SendReadyMaxWaitMs / 1000}s ({SizeNote(text)}; {await DescribeSendBlockerAsync()}).",
-            "BTN_NOT_FOUND" => $"[{ServiceName}] Send button not found ({SizeNote(text)}; {await DescribeSendBlockerAsync()}).",
+            "BTN_NOT_FOUND" => $"[{ServiceName}] Send button not found ({SizeNote(text)}; {await DescribeSendBlockerAsync()}). " +
+                               $"Fix the selector in {SelectorOverrides.DefaultPath}.",
             "NOT_SUBMITTED" => $"[{ServiceName}] Send was clicked but the message was not submitted ({await DescribeSendBlockerAsync()}).",
             _               => $"[{ServiceName}] Unexpected: {clickResult}"
         };
+    }
+
+    /// <summary>
+    /// Makes room for a new prompt. Returns null when the chat is idle, otherwise an error
+    /// message. A reply that is still streaming after <see cref="GenerationGrace"/> is stopped
+    /// (unless <see cref="InterruptGeneration"/> is off, then it is waited out for up to 45 s).
+    /// </summary>
+    private async Task<string?> ClearGenerationAsync()
+    {
+        if (!await IsGeneratingAsync())
+            return null;
+
+        if (await WaitWhileGeneratingAsync(GenerationGrace))
+            return null;
+
+        if (InterruptGeneration)
+        {
+            string stopped = await RunJsAsync($@"
+(function() {{
+    const btn = {EffStopJs};
+    if (!btn) return 'NO_STOP';
+    btn.click();
+    return 'STOPPED';
+}})()") ?? "NO_STOP";
+
+            Log.Information("[{Service}] Previous reply still streaming: stop -> {Result}", ServiceName, stopped);
+
+            if (stopped == "STOPPED" && await WaitWhileGeneratingAsync(TimeSpan.FromSeconds(5)))
+            {
+                await Task.Delay(250);   // let the UI swap Stop back to Send
+                return null;
+            }
+        }
+
+        if (await WaitWhileGeneratingAsync(TimeSpan.FromSeconds(45)))
+            return null;
+
+        return $"[{ServiceName}] The previous answer is still generating — press again when it finishes.";
     }
 
     /// <summary>
@@ -926,7 +1031,7 @@ public abstract class WebChatAutomationBase
 
     private string PrepareComposerScript() => $@"
 (function() {{
-    const el = {InputSelectorJs};
+    const el = {EffInputJs};
     if (!el) return 'INPUT_NOT_FOUND';
     try {{ window.focus(); }} catch (_) {{}}
     el.focus();
@@ -943,7 +1048,7 @@ public abstract class WebChatAutomationBase
 
     private string ComposerLengthScript() => $@"
 (function() {{
-    const el = {InputSelectorJs};
+    const el = {EffInputJs};
     if (!el) return -1;
     const t = (el.value !== undefined ? el.value : (el.textContent || '')) + '';
     return t.replace(/\s+/g, '').length;
@@ -951,7 +1056,7 @@ public abstract class WebChatAutomationBase
 
     private string InsertViaExecCommandScript(string text) => $@"
 (function() {{
-    const el = {InputSelectorJs};
+    const el = {EffInputJs};
     if (!el) return 'INPUT_NOT_FOUND';
     el.focus();
     document.execCommand('selectAll', false, null);
@@ -962,7 +1067,7 @@ public abstract class WebChatAutomationBase
 
     private string SetTextareaValueScript(string text) => $@"
 (function() {{
-    const el = {InputSelectorJs};
+    const el = {EffInputJs};
     if (!el) return 'INPUT_NOT_FOUND';
     el.focus();
     try {{
@@ -979,10 +1084,10 @@ public abstract class WebChatAutomationBase
     {
         string script = $@"
 (function() {{
-    const el = {InputSelectorJs};
+    const el = {EffInputJs};
     let chars = -1;
     if (el) chars = ((el.value !== undefined ? el.value : (el.textContent || '')) + '').replace(/\s+/g, '').length;
-    const btn = {SendButtonJs};
+    const btn = {EffSendJs};
     const alerts = Array.from(document.querySelectorAll('[role=""alert""], [class*=""toast""]'))
         .map(a => (a.innerText || '').trim()).filter(t => t).slice(0, 2).join(' | ').slice(0, 160);
     return JSON.stringify({{
@@ -1013,10 +1118,22 @@ public abstract class WebChatAutomationBase
         {
             // 1) Wait for the Send button to exist AND be enabled.
             var wait = System.Diagnostics.Stopwatch.StartNew();
+            bool enterTried = false;
             while (true)
             {
                 last = await RunJsAsync(SendReadyProbeScript()) ?? "JS_RETURNED_NULL";
                 if (last == "READY") break;
+
+                // No Send button at all usually means the site changed its markup. Both sites
+                // submit on Enter, so try that before giving up.
+                if (last == "BTN_NOT_FOUND" && !enterTried && wait.ElapsedMilliseconds >= EnterFallbackAfterMs)
+                {
+                    enterTried = true;
+                    Log.Warning("[{Service}] Send button not found, pressing Enter instead", ServiceName);
+                    if (await PressEnterInComposerAsync() && await WaitForSubmissionAsync())
+                        return "SENT";
+                }
+
                 if (wait.ElapsedMilliseconds >= SendReadyMaxWaitMs) return last;
                 await Task.Delay(SendReadyPollMs);
             }
@@ -1047,9 +1164,43 @@ public abstract class WebChatAutomationBase
         return false;
     }
 
+    /// <summary>Focuses the composer and sends a real Enter key press through the browser's input pipeline.</summary>
+    private async Task<bool> PressEnterInComposerAsync()
+    {
+        try
+        {
+            await EnsureFocusEmulationAsync();
+            await RunJsAsync($"(function() {{ const el = {EffInputJs}; if (el) el.focus(); }})()");
+
+            foreach (string type in new[] { "keyDown", "keyUp" })
+            {
+                // Optional CDP parameters must be omitted, not sent as null.
+                var args = new Dictionary<string, object>
+                {
+                    ["type"] = type,
+                    ["key"] = "Enter",
+                    ["code"] = "Enter",
+                    ["windowsVirtualKeyCode"] = 13,
+                    ["nativeVirtualKeyCode"] = 13
+                };
+                if (type == "keyDown")
+                    args["text"] = "\r";
+
+                await Core.CallDevToolsProtocolMethodAsync(
+                    "Input.dispatchKeyEvent", JsonSerializer.Serialize(args));
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[{Service}] Enter key fallback failed", ServiceName);
+            return false;
+        }
+    }
+
     private string SendReadyProbeScript() => $@"
 (function() {{
-    const btn = {SendButtonJs};
+    const btn = {EffSendJs};
     if (!btn) return 'BTN_NOT_FOUND';
     if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return 'BTN_DISABLED';
     return 'READY';
@@ -1057,7 +1208,7 @@ public abstract class WebChatAutomationBase
 
     private string ClickSendScript() => $@"
 (function() {{
-    const btn = {SendButtonJs};
+    const btn = {EffSendJs};
     if (!btn)         return 'BTN_NOT_FOUND';
     if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return 'BTN_DISABLED';
     btn.click();
@@ -1067,9 +1218,9 @@ public abstract class WebChatAutomationBase
     private string SubmittedProbeScript() => $@"
 (function() {{
     // Reply already streaming → definitely submitted.
-    if ({IsGeneratingJs}) return 'YES';
+    if ({EffGeneratingJs}) return 'YES';
     // Composer emptied → the page took the message.
-    const el = {InputSelectorJs};
+    const el = {EffInputJs};
     if (!el) return 'NO';
     const txt = (el.value !== undefined ? el.value : (el.innerText || el.textContent || '')) + '';
     return txt.trim().length === 0 ? 'YES' : 'NO';

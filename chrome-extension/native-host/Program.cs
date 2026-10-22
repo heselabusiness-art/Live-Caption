@@ -186,6 +186,8 @@ internal static class Program
                 string method = parts.Length > 0 ? parts[0].Trim() : "GET";
                 string path = parts.Length > 1 ? parts[1].Trim() : "/";
                 int q = path.IndexOf('?');
+                // ?fresh=1 (sent by a hotkey): read the Live Captions window right now instead of returning the last polled text.
+                bool fresh = q >= 0 && path[q..].Contains("fresh=1", StringComparison.OrdinalIgnoreCase);
                 if (q >= 0) path = path[..q];
                 path = path.TrimEnd('/').ToLowerInvariant();
                 if (path.Length == 0) path = "/";
@@ -208,6 +210,8 @@ internal static class Program
                     WriteJson(stream, Snapshot());
                     return;
                 }
+                if (fresh && Capture.ReadNow() is { } now)
+                    lock (Gate) _latestText = now;
                 WriteJson(stream, Snapshot());
             }
             catch (Exception ex)

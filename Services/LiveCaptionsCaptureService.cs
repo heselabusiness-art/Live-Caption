@@ -19,10 +19,11 @@ public enum CaptureStatus
 }
 
 /// <summary>
-/// Polls the Windows 11 Live Captions window via UI Automation and emits
-/// caption updates as text changes. Designed to keep CPU low: cheap polling
-/// (a few hundred ms) and string-level deduplication after whitespace
-/// normalization.
+/// Reads the Windows 11 Live Captions window via UI Automation and emits caption updates as the
+/// text changes. Updates are event-driven: UI Automation property/structure change events wake
+/// the reader immediately, so captions appear as soon as Windows writes them. A slow poll stays
+/// on as a safety net (and as the only mechanism if event registration is refused), and
+/// string-level deduplication keeps repeated reads from raising duplicate updates.
 /// </summary>
 public sealed class LiveCaptionsCaptureService : IDisposable
 {
@@ -32,8 +33,21 @@ public sealed class LiveCaptionsCaptureService : IDisposable
     private const string LiveCaptionsClassName = "LiveCaptionsDesktopWindow";
     private const string LiveCaptionsWindowName = "Live Captions";
 
+    /// <summary>Poll rate when no UI Automation events are available.</summary>
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>Safety-net poll while events are active (in case an event is ever missed).</summary>
+    private static readonly TimeSpan SafetyPollInterval = TimeSpan.FromSeconds(1.5);
+
+    /// <summary>Events arrive in bursts (one per word); wait briefly and read once.</summary>
+    private static readonly TimeSpan EventDebounce = TimeSpan.FromMilliseconds(60);
+
     private static readonly TimeSpan SearchInterval = TimeSpan.FromSeconds(2);
+
+    private readonly SemaphoreSlim _changed = new(0, 1);
+
+    /// <summary>The Live Captions window currently being monitored (also used by <see cref="ReadNow"/>).</summary>
+    private volatile AutomationElement? _window;
 
     private CancellationTokenSource? _cts;
     private Task? _workerTask;
@@ -43,6 +57,9 @@ public sealed class LiveCaptionsCaptureService : IDisposable
     public event EventHandler<CapturedCaption>? CaptionUpdated;
     public event EventHandler<CaptureStatus>? StatusChanged;
     public event EventHandler<Exception>? ErrorOccurred;
+
+    /// <summary>Informational messages for the host application's log (kept dependency-free: the native host shares this file).</summary>
+    public event Action<string>? Diagnostic;
 
     public CaptureStatus Status { get; private set; } = CaptureStatus.Idle;
     public bool IsRunning => _workerTask is { IsCompleted: false };
@@ -105,46 +122,57 @@ public sealed class LiveCaptionsCaptureService : IDisposable
                 }
 
                 UpdateStatus(CaptureStatus.Monitoring);
+                _window = window;
 
-                // Inner loop: poll the same window until it disappears or we cancel.
-                while (!token.IsCancellationRequested)
+                bool eventsActive = TrySubscribe(window, out Action unsubscribe);
+
+                // Inner loop: read the same window until it disappears or we cancel.
+                try
                 {
-                    string text;
-                    try
+                    while (!token.IsCancellationRequested)
                     {
-                        text = ExtractCaptionText(window);
-                    }
-                    catch (ElementNotAvailableException)
-                    {
-                        // Live Captions closed or restarted; drop the reference
-                        // and let the outer loop search for it again.
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        OnError(ex);
-                        break;
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        string snapshot = text.TrimEnd();
-                        if (!string.Equals(snapshot, _lastSnapshotText, StringComparison.Ordinal))
+                        string text;
+                        try
                         {
-                            _lastSnapshotText = snapshot;
+                            text = ExtractCaptionText(window);
+                        }
+                        catch (ElementNotAvailableException)
+                        {
+                            // Live Captions closed or restarted; drop the reference
+                            // and let the outer loop search for it again.
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            OnError(ex);
+                            break;
+                        }
 
-                            try
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            string snapshot = text.TrimEnd();
+                            if (!string.Equals(snapshot, _lastSnapshotText, StringComparison.Ordinal))
                             {
-                                CaptionUpdated?.Invoke(this, new CapturedCaption(snapshot));
-                            }
-                            catch (Exception ex)
-                            {
-                                OnError(ex);
+                                _lastSnapshotText = snapshot;
+
+                                try
+                                {
+                                    CaptionUpdated?.Invoke(this, new CapturedCaption(snapshot));
+                                }
+                                catch (Exception ex)
+                                {
+                                    OnError(ex);
+                                }
                             }
                         }
-                    }
 
-                    await Task.Delay(PollInterval, token).ConfigureAwait(false);
+                        await WaitForChangeAsync(eventsActive, token).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    _window = null;
+                    unsubscribe();
                 }
             }
         }
@@ -157,6 +185,93 @@ public sealed class LiveCaptionsCaptureService : IDisposable
             UpdateStatus(CaptureStatus.Error);
             OnError(ex);
         }
+    }
+
+    /// <summary>
+    /// Reads the caption text RIGHT NOW, independent of the monitoring loop. A hotkey press uses this so it captures what
+    /// Live Captions shows at that instant instead of whatever the last event / poll happened to deliver (events are debounced,
+    /// and the loop may not be running at all). Returns null when the Live Captions window cannot be found or read.
+    /// Safe to call from any thread; do not call it from the UI thread (UI Automation calls cross processes).
+    /// </summary>
+    public string? ReadNow()
+    {
+        try
+        {
+            AutomationElement? window = _window ?? TryFindLiveCaptionsWindow();
+            if (window is null) return null;
+
+            string text = ExtractCaptionText(window);
+            return string.IsNullOrWhiteSpace(text) ? null : text.TrimEnd();
+        }
+        catch (ElementNotAvailableException)
+        {
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Diagnostic?.Invoke($"ReadNow failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Subscribes to UI Automation change events on the caption window. Returns false (and a
+    /// no-op unsubscribe) when the subscription is refused, in which case polling carries on alone.
+    /// </summary>
+    private bool TrySubscribe(AutomationElement window, out Action unsubscribe)
+    {
+        var propertyHandler = new AutomationPropertyChangedEventHandler((_, _) => SignalChanged());
+        var structureHandler = new StructureChangedEventHandler((_, _) => SignalChanged());
+
+        try
+        {
+            Automation.AddAutomationPropertyChangedEventHandler(
+                window, TreeScope.Subtree, propertyHandler,
+                AutomationElement.NameProperty);
+            Automation.AddStructureChangedEventHandler(window, TreeScope.Subtree, structureHandler);
+        }
+        catch (Exception ex)
+        {
+            Diagnostic?.Invoke($"UI Automation events unavailable, falling back to polling: {ex.Message}");
+            unsubscribe = static () => { };
+            return false;
+        }
+
+        unsubscribe = () =>
+        {
+            try
+            {
+                Automation.RemoveAutomationPropertyChangedEventHandler(window, propertyHandler);
+                Automation.RemoveStructureChangedEventHandler(window, structureHandler);
+            }
+            catch
+            {
+                // The window is already gone; nothing left to unsubscribe from.
+            }
+        };
+
+        Diagnostic?.Invoke("Subscribed to Live Captions UI Automation events");
+        return true;
+    }
+
+    private void SignalChanged()
+    {
+        try { _changed.Release(); }
+        catch (SemaphoreFullException) { /* a wake-up is already pending */ }
+        catch (ObjectDisposedException) { /* stopped */ }
+    }
+
+    /// <summary>Sleeps until the next read is due: an event, or the poll interval.</summary>
+    private async Task WaitForChangeAsync(bool eventsActive, CancellationToken token)
+    {
+        if (!eventsActive)
+        {
+            await Task.Delay(PollInterval, token).ConfigureAwait(false);
+            return;
+        }
+
+        if (await _changed.WaitAsync(SafetyPollInterval, token).ConfigureAwait(false))
+            await Task.Delay(EventDebounce, token).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -207,11 +322,34 @@ public sealed class LiveCaptionsCaptureService : IDisposable
     /// </summary>
     private static string ExtractCaptionText(AutomationElement root)
     {
+        // The caption text block has a stable AutomationId; other text on the window (headers, hints such as
+        // "Ready to caption ...") must never be mistaken for speech.
+        string? byId = TryGetCaptionsTextBlock(root);
+        if (!string.IsNullOrWhiteSpace(byId))
+            return byId;
+
         string? pythonStyle = TryGetPrimaryTextControlName(root);
         if (!string.IsNullOrWhiteSpace(pythonStyle))
             return pythonStyle;
 
         return ExtractCaptionTextFallback(root);
+    }
+
+    private const string CaptionsTextBlockId = "CaptionsTextBlock";
+
+    private static string? TryGetCaptionsTextBlock(AutomationElement root)
+    {
+        try
+        {
+            AutomationElement? block = root.FindFirst(
+                TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.AutomationIdProperty, CaptionsTextBlockId));
+            return block?.Current.Name;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string? TryGetPrimaryTextControlName(AutomationElement control)

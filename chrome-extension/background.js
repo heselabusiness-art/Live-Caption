@@ -66,12 +66,36 @@ const DEFAULT_OB = {
 const tracker = new SegmentCaptureTracker();
 let latestCaption = "";
 let lastCaptureTime = null;
-let isSending = false;
+// Sends are serialised: a second hotkey press waits for its turn instead of being dropped
+// (the caption segment is already consumed by then, so a dropped send lost the question).
+const MAX_QUEUED_SENDS = 3;
+let sendChain = Promise.resolve();
+let pendingSends = 0;
 let captureRunning = false;
 let captureStatus = "idle";
 let lastScreenshot = null;
 let nativePort = null;
 let httpPollTimer = null;
+
+// ── MV3 service worker: Chrome stops it after ~30 s of silence and starts a fresh one for the next hotkey.
+// Everything in memory is gone then, so the transcript / read head / running flag are mirrored into
+// chrome.storage.session and every hotkey handler waits for `ready` (state restored, capture resumed).
+let persistTimer = null;
+function persistSoon() {
+  if (persistTimer) return;
+  persistTimer = setTimeout(persistNow, 250);
+}
+async function persistNow() {
+  clearTimeout(persistTimer);
+  persistTimer = null;
+  try {
+    await chrome.storage.session.set({
+      trackerState: tracker.serialize(),
+      latestCaption,
+      lastCaptureTime
+    });
+  } catch { /* older Chrome / quota: the next update retries */ }
+}
 
 function enableSidebar() {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
@@ -81,16 +105,23 @@ function enableSidebar() {
 chrome.runtime.onInstalled.addListener(() => {
   enableSidebar();
   seedStorage();
-  resumeCaptureIfNeeded();
+  ready = resumeCaptureIfNeeded();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   enableSidebar();
-  resumeCaptureIfNeeded();
+  ready = resumeCaptureIfNeeded();
 });
 
 enableSidebar();
-resumeCaptureIfNeeded();
+let ready = resumeCaptureIfNeeded();
+
+// The side panel keeps the worker alive while it is open (a message every 20 s resets Chrome's idle timer),
+// so the live caption bar keeps moving instead of freezing until the next hotkey.
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "lc-panel") return;
+  port.onMessage.addListener(() => {});
+});
 
 chrome.action.onClicked.addListener((tab) => {
   const windowId = tab?.windowId;
@@ -152,10 +183,31 @@ async function ensureAiContent(tabId) {
   }
 }
 
-async function sendPromptToAi(text) {
-  if (!text || !String(text).trim()) return { ok: false, message: "Empty prompt — nothing sent." };
-  if (isSending) return { ok: false, message: "Already sending…" };
+function sendPromptToAi(text) {
+  if (!text || !String(text).trim()) {
+    return Promise.resolve({ ok: false, message: "Empty prompt — nothing sent." });
+  }
 
+  if (pendingSends > MAX_QUEUED_SENDS) {
+    const message = `Too many prompts waiting (${MAX_QUEUED_SENDS}). Wait for the current one to finish.`;
+    broadcast({ type: "LC_SEND_STATUS", message, isError: true });
+    return Promise.resolve({ ok: false, message });
+  }
+
+  if (pendingSends > 0) {
+    broadcast({ type: "LC_SEND_STATUS", message: `Queued — ${pendingSends} ahead…`, isError: false });
+  }
+
+  pendingSends++;
+  const run = sendChain.then(() => deliverPromptToAi(text));
+  sendChain = run.then(
+    () => { pendingSends--; },
+    () => { pendingSends--; }
+  );
+  return run;
+}
+
+async function deliverPromptToAi(text) {
   const tab = await findAiTab();
   if (!tab) {
     const msg = "Navigate to ChatGPT (chatgpt.com) or Claude (claude.ai) first.";
@@ -163,7 +215,6 @@ async function sendPromptToAi(text) {
     return { ok: false, message: msg };
   }
 
-  isSending = true;
   broadcast({ type: "LC_SEND_STATUS", message: "Sending…", isError: false });
   try {
     await ensureAiContent(tab.id);
@@ -179,8 +230,6 @@ async function sendPromptToAi(text) {
     const message = `Error: ${err.message || err}`;
     broadcast({ type: "LC_SEND_STATUS", message, isError: true });
     return { ok: false, message };
-  } finally {
-    isSending = false;
   }
 }
 
@@ -204,6 +253,7 @@ async function fetchPrompt(relPath) {
 function applyCaption(text) {
   latestCaption = text || "";
   tracker.updateLiveText(latestCaption);
+  persistSoon();
   broadcast({
     type: "LC_CAPTION",
     text: latestCaption,
@@ -290,9 +340,33 @@ async function rememberCapture(running) {
 
 async function resumeCaptureIfNeeded() {
   try {
-    const data = await chrome.storage.session.get("captureRunning");
+    // restore what the previous worker knew BEFORE anything else touches the tracker
+    const data = await chrome.storage.session.get(["captureRunning", "trackerState", "latestCaption", "lastCaptureTime"]);
+    if (data.trackerState) tracker.restore(data.trackerState);
+    if (typeof data.latestCaption === "string" && !latestCaption) latestCaption = data.latestCaption;
+    if (data.lastCaptureTime != null && lastCaptureTime == null) lastCaptureTime = data.lastCaptureTime;
     if (data.captureRunning && !captureRunning) await startCapture();
   } catch { /* ignore */ }
+}
+
+/**
+ * A hotkey must capture what is on the Live Captions window RIGHT NOW, not whatever the last poll saw:
+ * make sure capture is running (it may have stopped with the worker), then pull one fresh snapshot
+ * from the host before reading the transcript.
+ */
+async function refreshCaptionNow() {
+  await ready;
+  if (!captureRunning) await startCapture();
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 1500);
+    try {
+      const res = await fetch(`${HTTP_BRIDGE}/?fresh=1`, { signal: ctl.signal });
+      if (res.ok) handleHostMessage(await res.json());
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch { /* host busy / not reachable: fall back to the transcript we have */ }
 }
 
 async function startCapture() {
@@ -355,9 +429,30 @@ async function stopCapture() {
   broadcast({ type: "LC_STATUS", captureStatus, captureRunning });
 }
 
-function captureSegmentToUi() {
+function noCaptionMessage() {
+  const why =
+    captureStatus === "notfound" ? "Live Captions is not open (press Win+Ctrl+L)."
+    : captureStatus === "error" ? "The Live Captions host reported an error."
+    : !latestCaption ? "No caption text has been read yet - is Live Captions showing speech?"
+    : "No new caption text since the last capture.";
+  return `Nothing to send. ${why}`;
+}
+
+function tellEmptyCapture() {
+  const message = noCaptionMessage();
+  broadcast({ type: "LC_SEND_STATUS", message, isError: true });
+  try {
+    chrome.action.setBadgeBackgroundColor({ color: "#c0392b" });
+    chrome.action.setBadgeText({ text: "0" });
+    setTimeout(() => chrome.action.setBadgeText({ text: "" }), 2500);
+  } catch { /* badge is best effort */ }
+}
+
+async function captureSegmentToUi() {
+  await refreshCaptionNow();
   const segment = tracker.captureNextSegment();
   lastCaptureTime = Date.now();
+  persistSoon();
   broadcast({
     type: "LC_SEGMENT",
     segment,
@@ -368,24 +463,26 @@ function captureSegmentToUi() {
 }
 
 async function handleCaptureSend() {
-  const segment = captureSegmentToUi();
-  if (!segment) return;
+  const segment = await captureSegmentToUi();
+  if (!segment) return tellEmptyCapture();
   const { settings } = await getState();
   await sendPromptToAi(buildQuestionTrigger(segment, settings));
 }
 
 async function handleCapturePushback() {
-  const segment = captureSegmentToUi();
-  if (!segment) return;
+  const segment = await captureSegmentToUi();
+  if (!segment) return tellEmptyCapture();
   const { settings } = await getState();
   await sendPromptToAi(buildPushbackTrigger(segment, settings));
 }
 
 async function handleCaptureOnly() {
-  captureSegmentToUi();
+  const segment = await captureSegmentToUi();
+  if (!segment) tellEmptyCapture();
 }
 
 async function handleSendReminder() {
+  await ready;
   const { settings, onboarding } = await getState();
   if (settings.activePanel === "onboarding") {
     const raw = await fetchPrompt("prompts/onboarding prompt/onboarding_assistant_prompt_v3.md");
@@ -397,8 +494,8 @@ async function handleSendReminder() {
 }
 
 async function handleTechSend() {
-  const segment = captureSegmentToUi();
-  if (!segment) return;
+  const segment = await captureSegmentToUi();
+  if (!segment) return tellEmptyCapture();
   await sendPromptToAi(buildTechTrigger(segment));
 }
 
@@ -534,6 +631,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
     case "LC_CLEAR":
       tracker.reset();
+      persistSoon();
       latestCaption = "";
       lastCaptureTime = null;
       lastScreenshot = null;

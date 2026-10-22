@@ -223,41 +223,68 @@ function individualPromptUrl(round) {
   return `prompts/Individual Prompt V2/${file}`;
 }
 
+const MAX_SEGMENT_CHARS = 4000;
+
+/**
+ * Makes a captured caption safe to embed between double quotes in a trigger prompt (mirrors
+ * PromptBuilder.SanitizeSegment in the desktop app): line breaks and repeated spaces become single
+ * spaces, double quotes become single quotes, and over-long text keeps only its most recent words.
+ */
+function sanitizeSegment(segment) {
+  if (!segment || !String(segment).trim()) return "";
+  let s = String(segment).replace(/["\u201C\u201D\u201E]/g, "'").replace(/\s+/g, " ").trim();
+  if (s.length <= MAX_SEGMENT_CHARS) return s;
+
+  let tail = s.slice(-MAX_SEGMENT_CHARS);
+  const firstSpace = tail.indexOf(" ");
+  if (firstSpace > 0 && firstSpace < 80) tail = tail.slice(firstSpace + 1);
+  return "\u2026 " + tail;
+}
+
 function buildQuestionTrigger(segment, settings) {
+  const text = sanitizeSegment(segment);
   if (settings.activePanel === "onboarding") {
-    return `THEY ASKED: "${segment}"`;
+    return `THEY ASKED: "${text}"`;
   }
   if (settings.promptModeIndividual) {
-    return `QUESTION: "${segment}"`;
+    return `QUESTION: "${text}"`;
   }
   if (settings.selectedRound === "Diagram") {
-    return `ROUND: System Design\nDIAGRAM: "${segment}"`;
+    return `ROUND: System Design\nDIAGRAM: "${text}"`;
   }
   const name = ROUND_DISPLAY[settings.selectedRound] || "Recruiter Screen";
-  return `ROUND: ${name}\nQUESTION: "${segment}"`;
+  return `ROUND: ${name}\nQUESTION: "${text}"`;
 }
 
 function buildPushbackTrigger(segment, settings) {
+  const text = sanitizeSegment(segment);
   if (settings.selectedRound === "Diagram") {
-    return `DIAGRAM PUSHBACK: "${segment}"`;
+    return `DIAGRAM PUSHBACK: "${text}"`;
   }
-  return `pushed back with: "${segment}"`;
+  return `pushed back with: "${text}"`;
 }
 
 function buildTechTrigger(segment) {
-  return `ROUND: Coding\nQUESTION: "${segment}"`;
+  return `ROUND: Coding\nQUESTION: "${sanitizeSegment(segment)}"`;
 }
 
+const promptFillExports = {
+  ROUND_FILE,
+  ROUND_DISPLAY,
+  fillIndividualPrompt,
+  fillFullPrompt,
+  fillOnboardingPrompt,
+  individualPromptUrl,
+  sanitizeSegment,
+  buildQuestionTrigger,
+  buildPushbackTrigger,
+  buildTechTrigger
+};
+
 if (typeof globalThis !== "undefined") {
-  Object.assign(globalThis, {
-    ROUND_FILE,
-    ROUND_DISPLAY,
-    fillIndividualPrompt,
-    fillFullPrompt,
-    fillOnboardingPrompt,
-    individualPromptUrl,
-    buildQuestionTrigger,
-    buildPushbackTrigger,
-    buildTechTrigger
-  });
+  Object.assign(globalThis, promptFillExports);
+}
+// CommonJS export so the logic can be unit-tested with `node --test` (ignored in the browser).
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = promptFillExports;
 }

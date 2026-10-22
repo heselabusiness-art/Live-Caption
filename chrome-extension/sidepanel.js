@@ -23,6 +23,23 @@ const OB_KEYS = [
 
 const $ = (id) => document.getElementById(id);
 
+// Keep the background service worker alive while the panel is open (Chrome stops idle workers after ~30 s,
+// which froze the live caption bar and dropped capture state between hotkey presses).
+(function keepWorkerAlive() {
+  let port = null;
+  const connect = () => {
+    try {
+      port = chrome.runtime.connect({ name: "lc-panel" });
+      port.onDisconnect.addListener(() => { port = null; });
+    } catch { port = null; }
+  };
+  connect();
+  setInterval(() => {
+    if (!port) connect();
+    try { port?.postMessage({ type: "LC_PING" }); } catch { port = null; }
+  }, 20000);
+})();
+
 let settings = {
   activePanel: "segment",
   promptModeIndividual: false,
